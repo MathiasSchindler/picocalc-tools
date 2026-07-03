@@ -8,6 +8,7 @@ typedef unsigned long usize;
 
 #define FLASH_BASE 0x10000000u
 #define APP_BASE   0x10032000u
+#define APP_FLASH_OFFSET (APP_BASE - FLASH_BASE)
 #define BOOT2_BASE 0x10000000u
 #define BOOT2_SIZE 0x00000100u
 #define RAM_BASE   0x20000000u
@@ -59,6 +60,7 @@ typedef unsigned long usize;
 #define SPI_SSPSR_OFF          0x0cu
 #define SPI_SSPCPSR_OFF        0x10u
 #define SPI_SSPICR_OFF         0x20u
+#define SPI_SSPDMACR_OFF       0x24u
 #define SPI_SSPCR0             (SPI1_BASE + SPI_SSPCR0_OFF)
 #define SPI_SSPCR1             (SPI1_BASE + SPI_SSPCR1_OFF)
 #define SPI_SSPDR              (SPI1_BASE + SPI_SSPDR_OFF)
@@ -80,6 +82,8 @@ typedef unsigned long usize;
 #define I2C_IC_FS_HCNT         (I2C1_BASE + 0x1cu)
 #define I2C_IC_FS_LCNT         (I2C1_BASE + 0x20u)
 #define I2C_IC_RAW_INTR        (I2C1_BASE + 0x34u)
+#define I2C_IC_RX_TL           (I2C1_BASE + 0x38u)
+#define I2C_IC_TX_TL           (I2C1_BASE + 0x3cu)
 #define I2C_IC_CLR_TX_ABRT     (I2C1_BASE + 0x54u)
 #define I2C_IC_CLR_STOP        (I2C1_BASE + 0x60u)
 #define I2C_IC_ENABLE          (I2C1_BASE + 0x6cu)
@@ -87,6 +91,7 @@ typedef unsigned long usize;
 #define I2C_IC_ENABLE_STATUS   (I2C1_BASE + 0x78u)
 #define I2C_IC_SDA_HOLD        (I2C1_BASE + 0x7cu)
 #define I2C_IC_TX_ABRT         (I2C1_BASE + 0x80u)
+#define I2C_IC_DMA_CR          (I2C1_BASE + 0x88u)
 #define I2C_IC_FS_SPKLEN       (I2C1_BASE + 0xa0u)
 #define I2C_DATA_CMD_READ      (1u << 8)
 #define I2C_DATA_CMD_STOP      (1u << 9)
@@ -97,6 +102,13 @@ typedef unsigned long usize;
 #define I2C_STATUS_TFE         (1u << 2)
 #define I2C_STATUS_TFNF        (1u << 1)
 #define I2C_FIFO_SIZE          8
+
+#define UART0_BASE             0x40034000u
+#define UART_SIZE              0x00001000u
+#define UART_DR                0x00u
+#define UART_FR                0x18u
+#define UART_FR_RXFE           (1u << 4)
+#define UART_FR_TXFE           (1u << 7)
 
 #define DMA_BASE               0x50000000u
 #define DMA_CH_STRIDE          0x40u
@@ -253,6 +265,7 @@ static int g_live_terminal;
 static int g_fail_on_budget;
 static int g_report_milestones;
 static u32 g_max_steps;
+static const char *g_flash_state_path;
 static u32 g_current_pc;
 static int g_frame_index;
 static int g_target_frames;
@@ -289,6 +302,7 @@ static u32 g_xosc[XOSC_SIZE / 4u];
 static u32 g_pll_sys[PLL_SIZE / 4u];
 static u32 g_pll_usb[PLL_SIZE / 4u];
 static u32 g_rtc[RTC_SIZE / 4u];
+static u32 g_uart0[UART_SIZE / 4u];
 static u32 g_xip_dr0_command;
 static u32 g_xip_dr0_reads;
 
@@ -328,6 +342,7 @@ typedef struct {
     u32 cr0;
     u32 cr1;
     u32 cpsr;
+    u32 dmacr;
     u32 last_rx;
     u8 tx[SPI_FIFO_SIZE];
     u8 rx[SPI_FIFO_SIZE];
@@ -347,6 +362,9 @@ typedef struct {
     u32 fs_lcnt;
     u32 sda_hold;
     u32 fs_spklen;
+    u32 rx_tl;
+    u32 tx_tl;
+    u32 dma_cr;
     u32 tx_abrt;
     u32 raw_intr;
     u8 selected_reg;
@@ -423,6 +441,14 @@ static long sys_write(int fd, const void *data, usize count) {
     register const void *a1 __asm__("rsi") = data;
     register usize a2 __asm__("rdx") = count;
     __asm__ volatile("syscall" : "=a"(result) : "a"(n), "r"(a0), "r"(a1), "r"(a2) : "rcx", "r11", "memory");
+    return result;
+}
+
+static long sys_close(int fd) {
+    long result;
+    register long n __asm__("rax") = 3;
+    register long a0 __asm__("rdi") = fd;
+    __asm__ volatile("syscall" : "=a"(result) : "a"(n), "r"(a0) : "rcx", "r11", "memory");
     return result;
 }
 
@@ -851,9 +877,27 @@ static void write_le32(u8 *p, u32 value) {
 }
 
 static int flash_offset(u32 addr, usize *out_off) {
-    if (addr < APP_BASE) return 0;
-    *out_off = (usize)(addr - APP_BASE);
+    if (addr < FLASH_BASE) return 0;
+    *out_off = (usize)(addr - FLASH_BASE);
     return *out_off < sizeof(g_flash);
+}
+
+static int boot2_stub_read8(u32 addr, u8 *out_value) {
+    u32 shift;
+    if (addr < BOOT2_BASE || addr >= BOOT2_BASE + BOOT2_SIZE) return 0;
+    shift = (addr & 3u) * 8u;
+    *out_value = (u8)(0x47704770u >> shift);
+    return 1;
+}
+
+static int boot2_stub_read16(u32 addr, u16 *out_value) {
+    u8 lo;
+    u8 hi;
+    if ((addr & 1u) != 0u) return 0;
+    if (!boot2_stub_read8(addr, &lo)) return 0;
+    if (!boot2_stub_read8(addr + 1u, &hi)) return 0;
+    *out_value = (u16)((u16)lo | ((u16)hi << 8));
+    return 1;
 }
 
 static int boot2_stub_read32(u32 addr, u32 *out_value) {
@@ -880,11 +924,12 @@ static int bootrom_read8(u32 addr, u8 *out_value) {
     u32 value;
     if (addr >= BOOTROM_SD_TABLE - 2u && addr < BOOTROM_SD_TABLE + 128u) { *out_value = 0; return 1; }
     if (addr >= BOOTROM_SF_TABLE - 2u && addr < BOOTROM_SF_TABLE + 128u) { *out_value = 0; return 1; }
-    if (addr >= 0x14u && addr < 0x1au) {
-        if (addr < 0x16u) value = BOOTROM_FUNC_TABLE;
-        else if (addr < 0x18u) value = BOOTROM_DATA_TABLE;
-        else value = BOOTROM_LOOKUP_ADDR | 1u;
-        *out_value = (u8)(value >> ((addr & 1u) * 8u));
+    if (addr >= 0x14u && addr < 0x1cu) {
+        u32 base;
+        if (addr < 0x16u) { value = BOOTROM_FUNC_TABLE; base = 0x14u; }
+        else if (addr < 0x18u) { value = BOOTROM_DATA_TABLE; base = 0x16u; }
+        else { value = BOOTROM_LOOKUP_ADDR | 1u; base = 0x18u; }
+        *out_value = (u8)(value >> ((addr - base) * 8u));
         return 1;
     }
     return 0;
@@ -1140,7 +1185,26 @@ static int bootrom_function_call(Cpu *cpu, u32 target, u32 return_pc) {
         } else {
             for (i = 0; i < len; ++i) mem_write8(dst + i, mem_read8(src + i));
         }
-    } else if (target == BOOTROM_FN_IF || target == BOOTROM_FN_EX || target == BOOTROM_FN_FC || target == BOOTROM_FN_RE || target == BOOTROM_FN_RP) {
+    } else if (target == BOOTROM_FN_RE) {
+        usize flash_off = (usize)cpu->r[0];
+        len = cpu->r[1];
+        if (flash_off < sizeof(g_flash)) {
+            usize limit = flash_off + len;
+            if (limit > sizeof(g_flash) || limit < flash_off) limit = sizeof(g_flash);
+            for (i = (u32)flash_off; i < limit; ++i) g_flash[i] = 0xffu;
+        }
+        cpu->r[0] = 0;
+    } else if (target == BOOTROM_FN_RP) {
+        usize flash_off = (usize)cpu->r[0];
+        src = cpu->r[1];
+        len = cpu->r[2];
+        if (flash_off < sizeof(g_flash)) {
+            usize limit = flash_off + len;
+            if (limit > sizeof(g_flash) || limit < flash_off) limit = sizeof(g_flash);
+            for (i = 0; flash_off + i < limit; ++i) g_flash[flash_off + i] &= mem_read8(src + i);
+        }
+        cpu->r[0] = 0;
+    } else if (target == BOOTROM_FN_IF || target == BOOTROM_FN_EX || target == BOOTROM_FN_FC) {
         cpu->r[0] = 0;
     } else return 0;
     cpu->r[15] = return_pc;
@@ -1208,16 +1272,25 @@ static u32 spi_read_data(void) {
     return byte;
 }
 
-static int spi_reg_offset(u32 addr, u32 *out_reg) {
-    if (addr >= SPI0_BASE && addr < SPI0_BASE + SPI_SIZE) {
-        *out_reg = addr - SPI0_BASE;
+static int spi_reg_offset(u32 addr, u32 *out_reg, u32 *out_alias) {
+    if (addr >= SPI0_BASE && addr < SPI0_BASE + 0x4000u) {
+        *out_reg = (addr - SPI0_BASE) & 0x0fffu;
+        *out_alias = (addr - SPI0_BASE) & 0x3000u;
         return 1;
     }
-    if (addr >= SPI1_BASE && addr < SPI1_BASE + SPI_SIZE) {
-        *out_reg = addr - SPI1_BASE;
+    if (addr >= SPI1_BASE && addr < SPI1_BASE + 0x4000u) {
+        *out_reg = (addr - SPI1_BASE) & 0x0fffu;
+        *out_alias = (addr - SPI1_BASE) & 0x3000u;
         return 1;
     }
     return 0;
+}
+
+static u32 atomic_alias_value(u32 old_value, u32 value, u32 alias) {
+    if (alias == 0x1000u) return old_value ^ value;
+    if (alias == 0x2000u) return old_value | value;
+    if (alias == 0x3000u) return old_value & ~value;
+    return value;
 }
 
 static void i2c_rx_push(u8 byte) {
@@ -1313,6 +1386,8 @@ static int dma_write32(u32 addr, u32 value) {
 static u32 mmio_read32(u32 addr) {
     u32 value;
     u32 spi_reg;
+    u32 spi_alias;
+    u32 i2c_addr = I2C1_BASE + ((addr - I2C1_BASE) & 0x0fffu);
     if (dma_read32(addr, &value)) return value;
     if (clock_read32(addr, &value)) return value;
     if (register_bank_read(addr, IO_BANK0_BASE, IO_BANK0_SIZE, g_io_bank0, &value)) return value;
@@ -1341,13 +1416,20 @@ static u32 mmio_read32(u32 addr) {
     if (addr >= SIO_SPINLOCK_BASE && addr < SIO_SPINLOCK_END && (addr & 3u) == 0u) return 1u;
     if (addr == RESETS_RESET) return g_resets_reset;
     if (addr == RESETS_DONE) return RESET_DONE_MASK & ~g_resets_reset;
-    if (spi_reg_offset(addr, &spi_reg)) {
+    if (spi_reg_offset(addr, &spi_reg, &spi_alias)) {
         if (spi_reg == SPI_SSPCR0_OFF) return g_spi.cr0;
         if (spi_reg == SPI_SSPCR1_OFF) return g_spi.cr1;
         if (spi_reg == SPI_SSPDR_OFF) return spi_read_data();
         if (spi_reg == SPI_SSPSR_OFF) return spi_status();
         if (spi_reg == SPI_SSPCPSR_OFF) return g_spi.cpsr;
+        if (spi_reg == SPI_SSPDMACR_OFF) return g_spi.dmacr;
     }
+    if (register_bank_read(addr, UART0_BASE, UART_SIZE, g_uart0, &value)) {
+        if ((addr & 0x0fffu) == UART_FR) return UART_FR_RXFE | UART_FR_TXFE;
+        if ((addr & 0x0fffu) == UART_DR) return 0u;
+        return value;
+    }
+    if (addr >= I2C1_BASE && addr < I2C1_BASE + 0x4000u) addr = i2c_addr;
     if (addr == I2C_IC_CON) return g_i2c.con;
     if (addr == I2C_IC_TAR) return g_i2c.tar;
     if (addr == I2C_IC_DATA_CMD) {
@@ -1360,6 +1442,8 @@ static u32 mmio_read32(u32 addr) {
     }
     if (addr == I2C_IC_FS_HCNT) return g_i2c.fs_hcnt;
     if (addr == I2C_IC_FS_LCNT) return g_i2c.fs_lcnt;
+    if (addr == I2C_IC_RX_TL) return g_i2c.rx_tl;
+    if (addr == I2C_IC_TX_TL) return g_i2c.tx_tl;
     if (addr == I2C_IC_RAW_INTR) return g_i2c.raw_intr | I2C_RAW_TX_EMPTY;
     if (addr == I2C_IC_CLR_TX_ABRT) { g_i2c.raw_intr &= ~I2C_RAW_TX_ABRT; return 0; }
     if (addr == I2C_IC_CLR_STOP) { g_i2c.raw_intr &= ~I2C_RAW_STOP_DET; return 0; }
@@ -1370,6 +1454,7 @@ static u32 mmio_read32(u32 addr) {
         (g_i2c.rx_count > 0 ? I2C_STATUS_RFNE : 0u);
     if (addr == I2C_IC_SDA_HOLD) return g_i2c.sda_hold;
     if (addr == I2C_IC_TX_ABRT) return g_i2c.tx_abrt;
+    if (addr == I2C_IC_DMA_CR) return g_i2c.dma_cr;
     if (addr == I2C_IC_FS_SPKLEN) return g_i2c.fs_spklen;
     trace_unknown_mmio("mmior", addr, 0u, 0u);
     return 0u;
@@ -1455,6 +1540,17 @@ static void lcd_apply_params(void) {
     if (g_trace_fd >= 0) {
         trace_text("lcd params cmd="); trace_hex32(g_lcd.command);
         trace_text(" count="); trace_hex32((u32)g_lcd.param_count);
+        if (g_lcd.command == 0x2au) {
+            trace_text(" x0="); trace_hex32((u32)g_lcd.x0);
+            trace_text(" x1="); trace_hex32((u32)g_lcd.x1);
+        } else if (g_lcd.command == 0x2bu) {
+            trace_text(" y0="); trace_hex32((u32)g_lcd.y0);
+            trace_text(" y1="); trace_hex32((u32)g_lcd.y1);
+        } else if (g_lcd.command == 0x36u) {
+            trace_text(" madctl="); trace_hex32((u32)g_lcd.madctl);
+        } else if (g_lcd.command == 0x3au) {
+            trace_text(" colmod="); trace_hex32((u32)g_lcd.colmod);
+        }
         trace_text("\n");
     }
 }
@@ -1466,6 +1562,7 @@ static void lcd_gpio_sync(void) {
 
 static void lcd_data(u8 byte) {
     int expected = lcd_expected_params(g_lcd.command);
+    int pixel_bytes = g_lcd.colmod == 0x55u ? 2 : 3;
     if (expected > 0) {
         if (g_lcd.param_count < (int)sizeof(g_lcd.params)) g_lcd.params[g_lcd.param_count++] = byte;
         if (g_lcd.param_count == expected) lcd_apply_params();
@@ -1473,9 +1570,18 @@ static void lcd_data(u8 byte) {
     }
     if (g_lcd.command == 0x2cu) {
         g_lcd.pixel[g_lcd.pixel_count++] = byte;
-        if (g_lcd.pixel_count == 3) {
-            lcd_set_pixel(g_lcd.x, g_lcd.y, g_lcd.pixel[0], g_lcd.pixel[1], g_lcd.pixel[2]);
-            g_frame_hash = (g_frame_hash * 16777619u) ^ ((u32)g_lcd.pixel[0] << 16) ^ ((u32)g_lcd.pixel[1] << 8) ^ g_lcd.pixel[2];
+        if (g_lcd.pixel_count == pixel_bytes) {
+            u8 red = g_lcd.pixel[0];
+            u8 green = g_lcd.pixel[1];
+            u8 blue = g_lcd.pixel[2];
+            if (pixel_bytes == 2) {
+                u16 rgb565 = (u16)(((u16)g_lcd.pixel[0] << 8) | g_lcd.pixel[1]);
+                red = (u8)((((rgb565 >> 11) & 0x1fu) * 255u + 15u) / 31u);
+                green = (u8)((((rgb565 >> 5) & 0x3fu) * 255u + 31u) / 63u);
+                blue = (u8)(((rgb565 & 0x1fu) * 255u + 15u) / 31u);
+            }
+            lcd_set_pixel(g_lcd.x, g_lcd.y, red, green, blue);
+            g_frame_hash = (g_frame_hash * 16777619u) ^ ((u32)red << 16) ^ ((u32)green << 8) ^ blue;
             g_lcd.pixel_count = 0;
             g_lcd.x += 1;
             if (g_lcd.x > g_lcd.x1) {
@@ -1530,6 +1636,9 @@ static void lcd_command(u8 command) {
 
 static void mmio_write32(u32 addr, u32 value) {
     u32 spi_reg;
+    u32 spi_alias;
+    u32 i2c_alias = (addr - I2C1_BASE) & 0x3000u;
+    u32 i2c_addr = I2C1_BASE + ((addr - I2C1_BASE) & 0x0fffu);
     if (dma_write32(addr, value)) return;
     if (clock_write32(addr, value)) { trace_mmio("clkw", addr, value); return; }
     if (register_bank_write(addr, value, IO_BANK0_BASE, IO_BANK0_SIZE, g_io_bank0)) return;
@@ -1567,15 +1676,18 @@ static void mmio_write32(u32 addr, u32 value) {
     if (addr == SIO_DIV_QUOTIENT) { g_sio_quotient = value; g_sio_div_dirty = 1; return; }
     if (addr == SIO_DIV_REMAINDER) { g_sio_remainder = value; g_sio_div_dirty = 1; return; }
     if (addr >= SIO_SPINLOCK_BASE && addr < SIO_SPINLOCK_END && (addr & 3u) == 0u) return;
-    if (spi_reg_offset(addr, &spi_reg)) {
-        if (spi_reg == SPI_SSPCR0_OFF) { g_spi.cr0 = value; return; }
-        if (spi_reg == SPI_SSPCR1_OFF) { g_spi.cr1 = value; return; }
-        if (spi_reg == SPI_SSPCPSR_OFF) { g_spi.cpsr = value; return; }
+    if (spi_reg_offset(addr, &spi_reg, &spi_alias)) {
+        if (spi_reg == SPI_SSPCR0_OFF) { g_spi.cr0 = atomic_alias_value(g_spi.cr0, value, spi_alias); return; }
+        if (spi_reg == SPI_SSPCR1_OFF) { g_spi.cr1 = atomic_alias_value(g_spi.cr1, value, spi_alias); return; }
+        if (spi_reg == SPI_SSPCPSR_OFF) { g_spi.cpsr = atomic_alias_value(g_spi.cpsr, value, spi_alias); return; }
+        if (spi_reg == SPI_SSPDMACR_OFF) { g_spi.dmacr = atomic_alias_value(g_spi.dmacr, value, spi_alias); return; }
         if (spi_reg == SPI_SSPICR_OFF) { g_spi.overrun = 0; return; }
         if (spi_reg == SPI_SSPDR_OFF) { spi_write_data((u8)value); return; }
     }
-    if (addr == I2C_IC_CON) { g_i2c.con = value; return; }
-    if (addr == I2C_IC_TAR) { g_i2c.tar = value; return; }
+    if (register_bank_write(addr, value, UART0_BASE, UART_SIZE, g_uart0)) return;
+    if (addr >= I2C1_BASE && addr < I2C1_BASE + 0x4000u) addr = i2c_addr;
+    if (addr == I2C_IC_CON) { g_i2c.con = atomic_alias_value(g_i2c.con, value, i2c_alias); return; }
+    if (addr == I2C_IC_TAR) { g_i2c.tar = atomic_alias_value(g_i2c.tar, value, i2c_alias); return; }
     if (addr == I2C_IC_DATA_CMD) {
         if (g_i2c.tx_level >= I2C_FIFO_SIZE) {
             g_i2c.tx_overflow = 1;
@@ -1607,8 +1719,11 @@ static void mmio_write32(u32 addr, u32 value) {
     }
     if (addr == I2C_IC_FS_HCNT) { g_i2c.fs_hcnt = value; return; }
     if (addr == I2C_IC_FS_LCNT) { g_i2c.fs_lcnt = value; return; }
-    if (addr == I2C_IC_ENABLE) { g_i2c.enable = value; return; }
-    if (addr == I2C_IC_SDA_HOLD) { g_i2c.sda_hold = value; return; }
+    if (addr == I2C_IC_RX_TL) { g_i2c.rx_tl = value; return; }
+    if (addr == I2C_IC_TX_TL) { g_i2c.tx_tl = value; return; }
+    if (addr == I2C_IC_ENABLE) { g_i2c.enable = atomic_alias_value(g_i2c.enable, value, i2c_alias); return; }
+    if (addr == I2C_IC_SDA_HOLD) { g_i2c.sda_hold = atomic_alias_value(g_i2c.sda_hold, value, i2c_alias); return; }
+    if (addr == I2C_IC_DMA_CR) { g_i2c.dma_cr = atomic_alias_value(g_i2c.dma_cr, value, i2c_alias); return; }
     if (addr == I2C_IC_FS_SPKLEN) { g_i2c.fs_spklen = value; return; }
     if (addr == XIP_SSI_DR0) { xip_dr0_write(value); return; }
     if (addr >= XIP_SSI_BASE && addr < XIP_SSI_BASE + XIP_SSI_SIZE) { trace_xip_mmio("xipw", addr, value); return; }
@@ -1624,9 +1739,9 @@ static void lcd_spi_byte(u8 byte) {
 static u32 mem_read32(u32 addr) {
     usize off;
     u32 value;
-    if (flash_offset(addr, &off) && off + 4u <= sizeof(g_flash)) return read_le32(g_flash + off);
     if (ram_offset(addr, &off) && off + 4u <= RAM_SIZE) return read_le32(g_ram + off);
     if (boot2_stub_read32(addr, &value)) return value;
+    if (flash_offset(addr, &off) && off + 4u <= sizeof(g_flash)) return read_le32(g_flash + off);
     if (bootrom_read32(addr, &value)) return value;
     return mmio_read32(addr);
 }
@@ -1634,8 +1749,9 @@ static u32 mem_read32(u32 addr) {
 static u16 mem_read16(u32 addr) {
     usize off;
     u16 value;
-    if (flash_offset(addr, &off) && off + 2u <= sizeof(g_flash)) return read_le16(g_flash + off);
     if (ram_offset(addr, &off) && off + 2u <= RAM_SIZE) return read_le16(g_ram + off);
+    if (boot2_stub_read16(addr, &value)) return value;
+    if (flash_offset(addr, &off) && off + 2u <= sizeof(g_flash)) return read_le16(g_flash + off);
     if (bootrom_read16(addr, &value)) return value;
     return (u16)mem_read32(addr);
 }
@@ -1643,8 +1759,9 @@ static u16 mem_read16(u32 addr) {
 static u8 mem_read8(u32 addr) {
     usize off;
     u8 value;
-    if (flash_offset(addr, &off) && off < sizeof(g_flash)) return g_flash[off];
     if (ram_offset(addr, &off) && off < RAM_SIZE) return g_ram[off];
+    if (boot2_stub_read8(addr, &value)) return value;
+    if (flash_offset(addr, &off) && off < sizeof(g_flash)) return g_flash[off];
     if (bootrom_read8(addr, &value)) return value;
     return (u8)mem_read32(addr);
 }
@@ -2336,20 +2453,54 @@ static int step(Cpu *cpu) {
     return -1;
 }
 
-static int load_file(const char *path) {
+static void flash_fill_erased(void) {
+    usize i;
+    for (i = 0; i < sizeof(g_flash); ++i) g_flash[i] = 0xffu;
+    g_flash_size = APP_FLASH_OFFSET;
+}
+
+static void load_flash_state(const char *path) {
     long fd = sys_openat(AT_FDCWD, path, O_RDONLY, 0);
     usize off = 0;
-    usize i;
-    if (fd < 0) return -1;
-    for (i = 0; i < sizeof(g_flash); ++i) g_flash[i] = 0xffu;
+    if (fd < 0) return;
     while (off < sizeof(g_flash)) {
         long got = sys_read((int)fd, g_flash + off, sizeof(g_flash) - off);
-        if (got < 0) return -1;
-        if (got == 0) break;
+        if (got <= 0) break;
         off += (usize)got;
     }
-    g_flash_size = off;
-    return off > 8u ? 0 : -1;
+    if (off > g_flash_size) g_flash_size = off;
+    (void)sys_close((int)fd);
+}
+
+static void save_flash_state(void) {
+    long fd;
+    usize off = 0;
+    if (g_flash_state_path == 0) return;
+    fd = sys_openat(AT_FDCWD, g_flash_state_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd < 0) return;
+    while (off < sizeof(g_flash)) {
+        long wrote = sys_write((int)fd, g_flash + off, sizeof(g_flash) - off);
+        if (wrote <= 0) break;
+        off += (usize)wrote;
+    }
+    (void)sys_close((int)fd);
+}
+
+static int load_file(const char *path) {
+    long fd = sys_openat(AT_FDCWD, path, O_RDONLY, 0);
+    usize off = APP_FLASH_OFFSET;
+    usize loaded = 0;
+    if (fd < 0) return -1;
+    while (off < sizeof(g_flash)) {
+        long got = sys_read((int)fd, g_flash + off, sizeof(g_flash) - off);
+        if (got < 0) { (void)sys_close((int)fd); return -1; }
+        if (got == 0) break;
+        off += (usize)got;
+        loaded += (usize)got;
+    }
+    if (off > g_flash_size) g_flash_size = off;
+    (void)sys_close((int)fd);
+    return loaded > 8u ? 0 : -1;
 }
 
 static void write_ppm(const char *path) {
@@ -2511,15 +2662,18 @@ static int run_bin(const char *in_path, const char *image_path, const char *key_
         g_live_stdin = 0;
     }
     terminal_enter_live();
+    flash_fill_erased();
+    if (g_flash_state_path != 0) load_flash_state(g_flash_state_path);
     if (load_file(in_path) != 0) {
         out("failed to load input bin\n");
         terminal_leave_live();
         return 1;
     }
-    sp = read_le32(g_flash);
-    reset = read_le32(g_flash + 4u);
+    sp = read_le32(g_flash + APP_FLASH_OFFSET);
+    reset = read_le32(g_flash + APP_FLASH_OFFSET + 4u);
     if (sp != 0x20042000u || (reset & 1u) == 0u) {
         out("unexpected vector table sp="); out_hex(sp); out(" reset="); out_hex(reset); out("\n");
+        save_flash_state();
         terminal_leave_live();
         return 1;
     }
@@ -2531,6 +2685,7 @@ static int run_bin(const char *in_path, const char *image_path, const char *key_
         if (!executable_addr(pc)) {
             out("invalid execute pc="); out_hex(pc); out("\n");
             report_lcd_milestones();
+            save_flash_state();
             terminal_leave_live();
             return 1;
         }
@@ -2555,6 +2710,7 @@ static int run_bin(const char *in_path, const char *image_path, const char *key_
             out(" sp="); out_hex(cpu.r[13]); out(" lr="); out_hex(cpu.r[14]);
             out("\n");
             report_lcd_milestones();
+            save_flash_state();
             terminal_leave_live();
             return 1;
         }
@@ -2579,15 +2735,18 @@ static int run_bin(const char *in_path, const char *image_path, const char *key_
     if (!path_has_frame_pattern(image_path) || g_frame_index == 0 || g_frame_index < g_target_frames) write_frame_output(image_path);
     report_lcd_milestones();
     if (g_fail_on_budget && cpu.steps >= g_max_steps) {
+        save_flash_state();
         terminal_leave_live();
         out("step budget failure\n");
         return 1;
     }
     if (g_expect_hash && g_last_output_hash != g_expected_hash) {
+        save_flash_state();
         terminal_leave_live();
         out("hash mismatch expected="); out_hex(g_expected_hash); out(" actual="); out_hex(g_last_output_hash); out("\n");
         return 1;
     }
+    save_flash_state();
     terminal_leave_live();
     out("emulated "); out_hex(cpu.steps); out(" steps, wrote "); out(image_path); out(" hash="); out_hex(g_last_output_hash); out("\n");
     return 0;
@@ -2599,7 +2758,7 @@ __attribute__((used)) int emu_main(int argc, char **argv) {
     int frames = 1;
     int i;
     if (argc < 3) {
-        out("usage: bin_emu input.bin output.png [key-script|-|@file] [--frames=N] [--trace[=path]] [--trace-kinds=base,calls,unknown-mmio,xip|all] [--expect-hash=HEX] [--max-steps=N] [--fail-on-budget] [--report-milestones] [--live-terminal]\n");
+        out("usage: bin_emu input.bin output.png [key-script|-|@file] [--frames=N] [--trace[=path]] [--trace-kinds=base,calls,unknown-mmio,xip|all] [--expect-hash=HEX] [--max-steps=N] [--fail-on-budget] [--report-milestones] [--live-terminal] [--flash-state=PATH]\n");
         return 1;
     }
     g_trace_fd = -1;
@@ -2608,6 +2767,7 @@ __attribute__((used)) int emu_main(int argc, char **argv) {
     g_live_terminal = 0;
     g_fail_on_budget = 0;
     g_report_milestones = 0;
+    g_flash_state_path = 0;
     g_max_steps = 20000000u;
     for (i = 3; i < argc; ++i) {
         if (str_starts(argv[i], "--frames=")) {
@@ -2645,6 +2805,8 @@ __attribute__((used)) int emu_main(int argc, char **argv) {
             g_report_milestones = 1;
         } else if (str_eq(argv[i], "--live-terminal")) {
             g_live_terminal = 1;
+        } else if (str_starts(argv[i], "--flash-state=")) {
+            g_flash_state_path = argv[i] + 14;
         } else {
             key_script = argv[i];
         }
