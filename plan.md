@@ -2,7 +2,7 @@
 
 This document describes the current emulator capability set. It is organized by whether a feature exists now and what its limitations are, not by when it was added.
 
-The emulator in scope here is `src/emulator/bin_emu.c`: a no-libc Linux program that runs the PicoCalc SD-boot RP2040 `.bin` firmware images produced by this repository and writes PNG framebuffer output by default. The PicoCalc GUI shell in `src/emulator/picocalc_shell.c` is listed separately because it wraps emulator output but does not emulate RP2040 execution.
+The emulator in scope here is `src/host/emulator/bin_emu.c`: a no-libc Linux program that runs the PicoCalc SD-boot RP2040 `.bin` firmware images produced by this repository and writes PNG framebuffer output by default. The PicoCalc GUI shell in `src/host/emulator/picocalc_shell.c` is listed separately because it wraps emulator output but does not emulate RP2040 execution.
 
 ## Validation Snapshot
 
@@ -43,10 +43,10 @@ Validated firmware paths:
 | Trace output | Fully implemented | `--trace` writes to stderr and `--trace=path` writes a compact transaction-level log. `--trace-kinds=base,calls,unknown-mmio,xip|all` enables optional indirect branch/Boot ROM, unknown-MMIO, and XIP SSI diagnostics for vendor investigation. Current base trace events include LCD commands, I2C operations, DMA activity, exception entry/return, reset writes, and frame hashes. Raw SPI pixel bytes are intentionally not logged. |
 | LCD milestone reporting | Fully implemented | `--report-milestones` prints first LCD command, first framebuffer pixel write, and first nonblack pixel with PC and cycle context. `make emu-vendor-probe` enables it so each vendor binary reports whether it has reached display output. |
 | Deterministic replay/hash tests | Fully implemented | `make emu-deterministic-tests` runs hello, graphics, solve replay from `tests/solve_replay.keys`, interrupt, DMA, Thumb, and vendor-startup probe firmware with `--expect-hash=...`, failing if the final framebuffer hash changes. `tests/emu_replays.tsv` records the covered binaries, replay inputs, traces, outputs, and expected hashes. |
-| Focused interrupt probe firmware | Fully implemented | `src/bare/interrupt_probe.c` verifies the minimal exception path with `SVC`, repeated `SysTick`, exception return, and NVIC IRQ0, and trace output records the entries/returns. |
-| Focused DMA probe firmware | Fully implemented | `src/bare/dma_probe.c` transfers a generated RGB block to the LCD through DMA channel 0 writing SPI1 data MMIO, then verifies that path through deterministic hashes and DMA trace events. |
-| Focused Thumb probe firmware | Fully implemented | `src/bare/thumb_probe.c` contains a small inline-assembly repro for the Cortex-M0+ `LDRH` immediate instruction, keeping decoder growth tied to a local firmware image. |
-| Focused vendor-startup probe firmware | Fully implemented | `src/bare/vendor_startup_probe.c` exercises the vendor-derived startup surface now modeled by the emulator: `BLX` register calls, barriers, `PRIMASK`, Boot ROM lookup/helpers, SIO divider/spinlocks, timer reads, RTC active polling, I2C enable-status, SPI0 ready status, and XIP SSI ready status. |
+| Focused interrupt probe firmware | Fully implemented | `src/picocalc/bare/interrupt_probe.c` verifies the minimal exception path with `SVC`, repeated `SysTick`, exception return, and NVIC IRQ0, and trace output records the entries/returns. |
+| Focused DMA probe firmware | Fully implemented | `src/picocalc/bare/dma_probe.c` transfers a generated RGB block to the LCD through DMA channel 0 writing SPI1 data MMIO, then verifies that path through deterministic hashes and DMA trace events. |
+| Focused Thumb probe firmware | Fully implemented | `src/picocalc/bare/thumb_probe.c` contains a small inline-assembly repro for the Cortex-M0+ `LDRH` immediate instruction, keeping decoder growth tied to a local firmware image. |
+| Focused vendor-startup probe firmware | Fully implemented | `src/picocalc/bare/vendor_startup_probe.c` exercises the vendor-derived startup surface now modeled by the emulator: `BLX` register calls, barriers, `PRIMASK`, Boot ROM lookup/helpers, SIO divider/spinlocks, timer reads, RTC active polling, I2C enable-status, SPI0 ready status, and XIP SSI ready status. |
 | PicoCalc-shaped GUI shell | Fully implemented | `picocalc_shell` wraps a 320x320 emulator screen image in a 900x1260 procedural PicoCalc-style mockup and writes PNG by default. It still accepts the internal raw PPM handoff used by Make targets. It is a static compositor, not a live GUI emulator. |
 
 ## Partially Implemented Emulator Features

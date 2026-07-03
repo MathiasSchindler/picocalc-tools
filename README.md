@@ -4,18 +4,20 @@ This project is an experiment in building freestanding, dependency-free, no-libc
 
 The primary C firmware path deliberately does not use the Pico SDK. Firmware is built as raw PicoCalc SD-bootloader `.bin` images linked at `0x10032000`, with local startup code, direct register access, small support shims, and device-specific LCD/keyboard drivers. The older Pico SDK route remains documented only as historical context for the original porting work; the active SDK-free path is the one exercised by the bare firmware and emulator targets below.
 
-`solve` is the first real use case. The repository contains a local fork of `newos/src/tools/solve.c`, trimmed support code for the solver, SDK-free PicoCalc I/O, and a growing RP2040/PicoCalc emulator so development can iterate quickly before copying binaries to the actual device.
+`solve` is the first real use case. The repository contains a local fork of the NewOS solver, trimmed support code for the solver, SDK-free PicoCalc I/O, and a growing RP2040/PicoCalc emulator so development can iterate quickly before copying binaries to the actual device.
 
 Most code in this repository is LLM-generated with GPT-5.5 and released under CC-0. Vendored third-party material keeps its own upstream license and should be treated separately.
 
 The repository currently contains:
 
-- `src/solve.c` and `src/solve/*.c`, copied from NewOS as the calculator solver use case.
-- `src/runtime.h`, `src/tool_util.h`, and `src/support.c`, providing only the support API used by the solver.
-- `src/bare/`, containing SDK-free RP2040 startup, PicoCalc LCD/keyboard code, and focused emulator probe firmware.
-- `src/emulator/`, containing the no-libc Linux `.bin` emulator and PNG writer.
-- `src/platform_linux_x86_64.c`, a tiny syscall-based host runner for smoke tests.
-- `src/platform_rp2040.c` and `src/picocalc_io.c`, retained from the earlier Pico SDK port path.
+- `src/solve.c` and `src/solve/*.c`, the shared calculator solver use case.
+- `src/runtime.h`, `src/tool_util.h`, and `src/support.c`, providing only the shared support API used by the solver.
+- `src/host/emulator/`, containing the no-libc Linux `.bin` emulator, PicoCalc shell compositor, PNG writer, and host no-libc helpers.
+- `src/host/sim/`, containing the older source-level Linux simulator for firmware entry points.
+- `src/host/solve/`, containing the tiny syscall-based host runner for smoke tests.
+- `src/host/tools/`, containing host-only build tools such as the bitmap font generator.
+- `src/picocalc/bare/`, containing SDK-free RP2040 startup, PicoCalc LCD/keyboard code, and focused emulator probe firmware.
+- `src/picocalc/sdk/`, retained from the earlier Pico SDK port path for comparison and historical continuity.
 - `vendor/docs/`, `vendor/images/`, `vendor/PicoCalc/`, and `vendor/microsoft/`, containing local reference material and test inputs that are ignored by Git.
 - `vendor/newos/`, the vendored NewOS font-rendering support that remains trackable because it is wired into the generated bitmap font path.
 
@@ -52,13 +54,13 @@ For the active SDK-free path, you can check that the solver core compiles for Co
 make arm-probe
 ```
 
-`src/platform_rp2040.c` uses weak I/O hooks:
+`src/picocalc/sdk/platform_rp2040.c` uses weak I/O hooks:
 
 - `picocalc_solve_io_init`
 - `picocalc_solve_getchar_timeout_us`
 - `picocalc_solve_putchar`
 
-By default those hooks use Pico SDK stdio over USB/UART. `src/picocalc_io.c` overrides them with ClockworkPi's I2C keyboard and SPI LCD drivers from `vendor/PicoCalc/Code/picocalc_helloworld`.
+By default those hooks use Pico SDK stdio over USB/UART. `src/picocalc/sdk/picocalc_io.c` overrides them with ClockworkPi's I2C keyboard and SPI LCD drivers from `vendor/PicoCalc/Code/picocalc_helloworld`.
 
 The PicoCalc LCD output uses a buffered text console instead of the vendor driver's pixel-readback scroll path. Simple implicit multiplication is normalized for calculator-style input, so expressions such as `6x-3=0` and `2(x+1)=6` work.
 

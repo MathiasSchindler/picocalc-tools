@@ -18,8 +18,8 @@ add_subdirectory(vendor/PicoCalc/Code/pico_multi_booter/sd_boot/lcdspi)
 set(PICOCALC_SOLVE_SOURCES
     src/solve.c
     src/support.c
-    src/platform_rp2040.c
-    src/picocalc_io.c
+    src/picocalc/sdk/platform_rp2040.c
+    src/picocalc/sdk/picocalc_io.c
 )
 
 function(configure_picocalc_solve_target target)

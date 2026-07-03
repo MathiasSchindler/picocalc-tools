@@ -6,11 +6,16 @@ LDLIBS ?= -lgcc
 BUILD_DIR := build
 HOST_SOLVE := $(BUILD_DIR)/solve-host
 HOST_OBJS := $(BUILD_DIR)/solve.o $(BUILD_DIR)/support.o $(BUILD_DIR)/platform_linux_x86_64.o
+HOST_SOLVE_SRC_DIR := src/host/solve
+HOST_EMU_SRC_DIR := src/host/emulator
+HOST_SIM_SRC_DIR := src/host/sim
+HOST_TOOLS_SRC_DIR := src/host/tools
+PICOCALC_BARE_SRC_DIR := src/picocalc/bare
 FONT_DIR := $(BUILD_DIR)/font
 FONTGEN := $(FONT_DIR)/gen_picocalc_font
 FONTRENDER_DIR := vendor/newos/fontrender
 FONTGEN_CFLAGS ?= -std=c11 -Wall -Wextra -O2 -I$(FONTRENDER_DIR)
-FONTGEN_SRCS := src/tools/gen_picocalc_font.c $(FONTRENDER_DIR)/fr_platform.c $(FONTRENDER_DIR)/fr_ttf.c $(FONTRENDER_DIR)/fr_raster.c $(FONTRENDER_DIR)/font_backend_truetype.c
+FONTGEN_SRCS := $(HOST_TOOLS_SRC_DIR)/gen_picocalc_font.c $(FONTRENDER_DIR)/fr_platform.c $(FONTRENDER_DIR)/fr_ttf.c $(FONTRENDER_DIR)/fr_raster.c $(FONTRENDER_DIR)/font_backend_truetype.c
 FONTGEN_INPUT := vendor/microsoft/cascadia/CascadiaMono.ttf
 FONTGEN_HEADER := $(FONT_DIR)/picocalc_cascadia_8x14.h
 FONTGEN_PREVIEW := $(FONT_DIR)/picocalc_cascadia_8x14.ppm
@@ -31,13 +36,13 @@ BIN_EMU_OBJS := $(EMU_DIR)/bin_emu.o $(PNG_WRITER_OBJ)
 GUI_DIR := $(BUILD_DIR)/gui
 PICOCALC_SHELL := $(EMU_DIR)/picocalc_shell
 PICOCALC_SHELL_OBJS := $(EMU_DIR)/picocalc_shell.o $(PNG_WRITER_OBJ)
-EMU_CFLAGS ?= -std=c11 -Wall -Wextra -O2 -ffreestanding -fno-builtin -fno-pie -fno-stack-protector -Isrc/emulator
+EMU_CFLAGS ?= -std=c11 -Wall -Wextra -O2 -ffreestanding -fno-builtin -fno-pie -fno-stack-protector -I$(HOST_EMU_SRC_DIR)
 EMU_LDFLAGS ?= -nostdlib -no-pie
 SIM_DIR := $(BUILD_DIR)/sim
 SIM_SOLVE_FIXED := $(SIM_DIR)/sim_solve_fixed
 SIM_SOLVE_REPL := $(SIM_DIR)/sim_solve_repl
 SIM_GRAPHICS := $(SIM_DIR)/sim_graphics
-SIM_CFLAGS ?= -std=c11 -Wall -Wextra -O2 -ffreestanding -fno-builtin -fno-pie -fno-stack-protector -DPICOCALC_BARE_SIM -DPICOCALC_SOLVE_PROVIDE_MEMOPS -Isrc -Isrc/bare -Isrc/sim -I$(FONT_DIR)
+SIM_CFLAGS ?= -std=c11 -Wall -Wextra -O2 -ffreestanding -fno-builtin -fno-pie -fno-stack-protector -DPICOCALC_BARE_SIM -DPICOCALC_SOLVE_PROVIDE_MEMOPS -Isrc -I$(PICOCALC_BARE_SRC_DIR) -I$(HOST_SIM_SRC_DIR) -I$(FONT_DIR)
 SIM_LDFLAGS ?= -nostdlib -no-pie
 SIM_LDLIBS ?= -lgcc
 SIM_SOLVE_FIXED_OBJS := $(SIM_DIR)/host_main.o $(SIM_DIR)/picocalc_lcd_sim.o $(SIM_DIR)/solve_fixed.o $(SIM_DIR)/solve.o $(SIM_DIR)/support.o
@@ -65,8 +70,8 @@ BARE_THUMB_ELF := $(BARE_DIR)/bare_thumb_probe.elf
 BARE_THUMB_BIN := $(BARE_DIR)/bare_thumb_probe.bin
 BARE_VENDOR_STARTUP_ELF := $(BARE_DIR)/bare_vendor_startup_probe.elf
 BARE_VENDOR_STARTUP_BIN := $(BARE_DIR)/bare_vendor_startup_probe.bin
-BARE_CFLAGS ?= -std=c11 -Wall -Wextra -Os -ffreestanding -fno-builtin -fno-stack-protector -ffunction-sections -fdata-sections -mcpu=cortex-m0plus -mthumb -Isrc/bare -Isrc -I$(FONT_DIR)
-BARE_LDFLAGS ?= -nostdlib -Wl,--gc-sections -Tsrc/bare/memmap_sd_rp2040.ld
+BARE_CFLAGS ?= -std=c11 -Wall -Wextra -Os -ffreestanding -fno-builtin -fno-stack-protector -ffunction-sections -fdata-sections -mcpu=cortex-m0plus -mthumb -I$(PICOCALC_BARE_SRC_DIR) -Isrc -I$(FONT_DIR)
+BARE_LDFLAGS ?= -nostdlib -Wl,--gc-sections -T$(PICOCALC_BARE_SRC_DIR)/memmap_sd_rp2040.ld
 BARE_LDLIBS ?= -lgcc
 BARE_HELLO_OBJS := $(BARE_DIR)/start.o $(BARE_DIR)/picocalc_lcd_bare.o $(BARE_DIR)/hello.o
 BARE_KEYS_OBJS := $(BARE_DIR)/start.o $(BARE_DIR)/picocalc_lcd_bare.o $(BARE_DIR)/picocalc_kbd_bare.o $(BARE_DIR)/keys.o
@@ -88,6 +93,9 @@ $(BUILD_DIR):
 $(BUILD_DIR)/%.o: src/%.c | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
+$(BUILD_DIR)/platform_linux_x86_64.o: $(HOST_SOLVE_SRC_DIR)/platform_linux_x86_64.c | $(BUILD_DIR)
+	$(CC) $(CFLAGS) -c $< -o $@
+
 $(HOST_SOLVE): $(HOST_OBJS)
 	$(CC) $(LDFLAGS) $^ $(LDLIBS) -o $@
 
@@ -105,7 +113,7 @@ font-cascadia: $(FONTGEN_HEADER) $(FONTGEN_PREVIEW)
 $(EMU_DIR):
 	mkdir -p $(EMU_DIR)
 
-$(EMU_DIR)/%.o: src/emulator/%.c | $(EMU_DIR)
+$(EMU_DIR)/%.o: $(HOST_EMU_SRC_DIR)/%.c | $(EMU_DIR)
 	$(CC) $(EMU_CFLAGS) -c $< -o $@
 
 $(BIN_EMU): $(BIN_EMU_OBJS)
@@ -186,10 +194,10 @@ gui-solve: $(BIN_EMU) $(BARE_SOLVE_BIN) $(PICOCALC_SHELL) | $(GUI_DIR)
 $(SIM_DIR):
 	mkdir -p $(SIM_DIR)
 
-$(SIM_DIR)/%.o: src/sim/%.c | $(SIM_DIR)
+$(SIM_DIR)/%.o: $(HOST_SIM_SRC_DIR)/%.c | $(SIM_DIR)
 	$(CC) $(SIM_CFLAGS) -c $< -o $@
 
-$(SIM_DIR)/%.o: src/bare/%.c | $(SIM_DIR)
+$(SIM_DIR)/%.o: $(PICOCALC_BARE_SRC_DIR)/%.c | $(SIM_DIR)
 	$(CC) $(SIM_CFLAGS) -c $< -o $@
 
 $(SIM_DIR)/solve.o: src/solve.c | $(SIM_DIR)
@@ -229,7 +237,7 @@ arm-probe:
 $(BARE_DIR):
 	mkdir -p $(BARE_DIR)
 
-$(BARE_DIR)/%.o: src/bare/%.c | $(BARE_DIR)
+$(BARE_DIR)/%.o: $(PICOCALC_BARE_SRC_DIR)/%.c | $(BARE_DIR)
 	$(BARE_CC) $(BARE_CFLAGS) -c $< -o $@
 
 $(BARE_DIR)/solve.o: src/solve.c | $(BARE_DIR)
@@ -238,11 +246,11 @@ $(BARE_DIR)/solve.o: src/solve.c | $(BARE_DIR)
 $(BARE_DIR)/support.o: src/support.c | $(BARE_DIR)
 	$(BARE_CC) $(BARE_CFLAGS) -DPICOCALC_SOLVE_PROVIDE_MEMOPS -c $< -o $@
 
-$(SIM_DIR)/picocalc_lcd_sim.o $(BARE_DIR)/picocalc_lcd_bare.o: $(FONTGEN_HEADER) src/bare/picocalc_font.h
+$(SIM_DIR)/picocalc_lcd_sim.o $(BARE_DIR)/picocalc_lcd_bare.o: $(FONTGEN_HEADER) $(PICOCALC_BARE_SRC_DIR)/picocalc_font.h
 
-$(BARE_HELLO_OBJS) $(BARE_KEYS_OBJS) $(BARE_SOLVE_FIXED_OBJS) $(BARE_SOLVE_OBJS) $(BARE_GRAPHICS_OBJS) $(BARE_INTERRUPT_OBJS) $(BARE_DMA_OBJS) $(BARE_THUMB_OBJS) $(BARE_VENDOR_STARTUP_OBJS): src/bare/rp2040_regs.h src/bare/picocalc_lcd_bare.h src/bare/picocalc_kbd_bare.h
+$(BARE_HELLO_OBJS) $(BARE_KEYS_OBJS) $(BARE_SOLVE_FIXED_OBJS) $(BARE_SOLVE_OBJS) $(BARE_GRAPHICS_OBJS) $(BARE_INTERRUPT_OBJS) $(BARE_DMA_OBJS) $(BARE_THUMB_OBJS) $(BARE_VENDOR_STARTUP_OBJS): $(PICOCALC_BARE_SRC_DIR)/rp2040_regs.h $(PICOCALC_BARE_SRC_DIR)/picocalc_lcd_bare.h $(PICOCALC_BARE_SRC_DIR)/picocalc_kbd_bare.h
 
-$(BARE_HELLO_ELF): $(BARE_HELLO_OBJS) src/bare/memmap_sd_rp2040.ld
+$(BARE_HELLO_ELF): $(BARE_HELLO_OBJS) $(PICOCALC_BARE_SRC_DIR)/memmap_sd_rp2040.ld
 	$(BARE_CC) $(BARE_CFLAGS) $(BARE_LDFLAGS) $(BARE_HELLO_OBJS) $(BARE_LDLIBS) -o $@
 
 $(BARE_HELLO_BIN): $(BARE_HELLO_ELF)
@@ -252,7 +260,7 @@ $(BARE_HELLO_BIN): $(BARE_HELLO_ELF)
 
 bare-hello: $(BARE_HELLO_BIN)
 
-$(BARE_KEYS_ELF): $(BARE_KEYS_OBJS) src/bare/memmap_sd_rp2040.ld
+$(BARE_KEYS_ELF): $(BARE_KEYS_OBJS) $(PICOCALC_BARE_SRC_DIR)/memmap_sd_rp2040.ld
 	$(BARE_CC) $(BARE_CFLAGS) $(BARE_LDFLAGS) $(BARE_KEYS_OBJS) $(BARE_LDLIBS) -o $@
 
 $(BARE_KEYS_BIN): $(BARE_KEYS_ELF)
@@ -262,7 +270,7 @@ $(BARE_KEYS_BIN): $(BARE_KEYS_ELF)
 
 bare-keys: $(BARE_KEYS_BIN)
 
-$(BARE_SOLVE_FIXED_ELF): $(BARE_SOLVE_FIXED_OBJS) src/bare/memmap_sd_rp2040.ld
+$(BARE_SOLVE_FIXED_ELF): $(BARE_SOLVE_FIXED_OBJS) $(PICOCALC_BARE_SRC_DIR)/memmap_sd_rp2040.ld
 	$(BARE_CC) $(BARE_CFLAGS) $(BARE_LDFLAGS) $(BARE_SOLVE_FIXED_OBJS) $(BARE_LDLIBS) -o $@
 
 $(BARE_SOLVE_FIXED_BIN): $(BARE_SOLVE_FIXED_ELF)
@@ -272,7 +280,7 @@ $(BARE_SOLVE_FIXED_BIN): $(BARE_SOLVE_FIXED_ELF)
 
 bare-solve-fixed: $(BARE_SOLVE_FIXED_BIN)
 
-$(BARE_SOLVE_ELF): $(BARE_SOLVE_OBJS) src/bare/memmap_sd_rp2040.ld
+$(BARE_SOLVE_ELF): $(BARE_SOLVE_OBJS) $(PICOCALC_BARE_SRC_DIR)/memmap_sd_rp2040.ld
 	$(BARE_CC) $(BARE_CFLAGS) $(BARE_LDFLAGS) $(BARE_SOLVE_OBJS) $(BARE_LDLIBS) -o $@
 
 $(BARE_SOLVE_BIN): $(BARE_SOLVE_ELF)
@@ -282,7 +290,7 @@ $(BARE_SOLVE_BIN): $(BARE_SOLVE_ELF)
 
 bare-solve: $(BARE_SOLVE_BIN)
 
-$(BARE_GRAPHICS_ELF): $(BARE_GRAPHICS_OBJS) src/bare/memmap_sd_rp2040.ld
+$(BARE_GRAPHICS_ELF): $(BARE_GRAPHICS_OBJS) $(PICOCALC_BARE_SRC_DIR)/memmap_sd_rp2040.ld
 	$(BARE_CC) $(BARE_CFLAGS) $(BARE_LDFLAGS) $(BARE_GRAPHICS_OBJS) $(BARE_LDLIBS) -o $@
 
 $(BARE_GRAPHICS_BIN): $(BARE_GRAPHICS_ELF)
@@ -292,7 +300,7 @@ $(BARE_GRAPHICS_BIN): $(BARE_GRAPHICS_ELF)
 
 bare-graphics: $(BARE_GRAPHICS_BIN)
 
-$(BARE_INTERRUPT_ELF): $(BARE_INTERRUPT_OBJS) src/bare/memmap_sd_rp2040.ld
+$(BARE_INTERRUPT_ELF): $(BARE_INTERRUPT_OBJS) $(PICOCALC_BARE_SRC_DIR)/memmap_sd_rp2040.ld
 	$(BARE_CC) $(BARE_CFLAGS) $(BARE_LDFLAGS) $(BARE_INTERRUPT_OBJS) $(BARE_LDLIBS) -o $@
 
 $(BARE_INTERRUPT_BIN): $(BARE_INTERRUPT_ELF)
@@ -302,7 +310,7 @@ $(BARE_INTERRUPT_BIN): $(BARE_INTERRUPT_ELF)
 
 bare-interrupt-probe: $(BARE_INTERRUPT_BIN)
 
-$(BARE_DMA_ELF): $(BARE_DMA_OBJS) src/bare/memmap_sd_rp2040.ld
+$(BARE_DMA_ELF): $(BARE_DMA_OBJS) $(PICOCALC_BARE_SRC_DIR)/memmap_sd_rp2040.ld
 	$(BARE_CC) $(BARE_CFLAGS) $(BARE_LDFLAGS) $(BARE_DMA_OBJS) $(BARE_LDLIBS) -o $@
 
 $(BARE_DMA_BIN): $(BARE_DMA_ELF)
@@ -312,7 +320,7 @@ $(BARE_DMA_BIN): $(BARE_DMA_ELF)
 
 bare-dma-probe: $(BARE_DMA_BIN)
 
-$(BARE_THUMB_ELF): $(BARE_THUMB_OBJS) src/bare/memmap_sd_rp2040.ld
+$(BARE_THUMB_ELF): $(BARE_THUMB_OBJS) $(PICOCALC_BARE_SRC_DIR)/memmap_sd_rp2040.ld
 	$(BARE_CC) $(BARE_CFLAGS) $(BARE_LDFLAGS) $(BARE_THUMB_OBJS) $(BARE_LDLIBS) -o $@
 
 $(BARE_THUMB_BIN): $(BARE_THUMB_ELF)
@@ -322,7 +330,7 @@ $(BARE_THUMB_BIN): $(BARE_THUMB_ELF)
 
 bare-thumb-probe: $(BARE_THUMB_BIN)
 
-$(BARE_VENDOR_STARTUP_ELF): $(BARE_VENDOR_STARTUP_OBJS) src/bare/memmap_sd_rp2040.ld
+$(BARE_VENDOR_STARTUP_ELF): $(BARE_VENDOR_STARTUP_OBJS) $(PICOCALC_BARE_SRC_DIR)/memmap_sd_rp2040.ld
 	$(BARE_CC) $(BARE_CFLAGS) $(BARE_LDFLAGS) $(BARE_VENDOR_STARTUP_OBJS) $(BARE_LDLIBS) -o $@
 
 $(BARE_VENDOR_STARTUP_BIN): $(BARE_VENDOR_STARTUP_ELF)
