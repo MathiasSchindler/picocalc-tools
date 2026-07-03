@@ -84,10 +84,12 @@
 #define I2C_IC_CLR_STOP        (I2C1_BASE + 0x60u)
 #define I2C_IC_ENABLE          (I2C1_BASE + 0x6cu)
 #define I2C_IC_STATUS          (I2C1_BASE + 0x70u)
-#define I2C_IC_ENABLE_STATUS   (I2C1_BASE + 0x78u)
+#define I2C_IC_TXFLR           (I2C1_BASE + 0x74u)
+#define I2C_IC_RXFLR           (I2C1_BASE + 0x78u)
 #define I2C_IC_SDA_HOLD        (I2C1_BASE + 0x7cu)
 #define I2C_IC_TX_ABRT         (I2C1_BASE + 0x80u)
 #define I2C_IC_DMA_CR          (I2C1_BASE + 0x88u)
+#define I2C_IC_ENABLE_STATUS   (I2C1_BASE + 0x9cu)
 #define I2C_IC_FS_SPKLEN       (I2C1_BASE + 0xa0u)
 #define I2C_DATA_CMD_READ      (1u << 8)
 #define I2C_DATA_CMD_STOP      (1u << 9)
@@ -190,6 +192,11 @@
 #define BOOTROM_FN_FC          0x000011a0u
 #define BOOTROM_FN_RE          0x000011b0u
 #define BOOTROM_FN_RP          0x000011c0u
+#define BOOTROM_FN_FADD        0x00001200u
+#define BOOTROM_FN_FSUB        0x00001210u
+#define BOOTROM_FN_FMUL        0x00001220u
+#define BOOTROM_FN_FDIV        0x00001230u
+#define BOOTROM_FN_F2I         0x00001240u
 #define ROM_CODE_IF            0x00004649u
 #define ROM_CODE_EX            0x00005845u
 #define ROM_CODE_FC            0x00004346u
@@ -751,8 +758,22 @@ static int executable_addr(u32 addr) {
 
 static int bootrom_read8(u32 addr, u8 *out_value) {
     u32 value;
+    u32 sf_off;
+    if (addr == 0x13u) { *out_value = 1u; return 1; }
     if (addr >= BOOTROM_SD_TABLE - 2u && addr < BOOTROM_SD_TABLE + 128u) { *out_value = 0; return 1; }
-    if (addr >= BOOTROM_SF_TABLE - 2u && addr < BOOTROM_SF_TABLE + 128u) { *out_value = 0; return 1; }
+    if (addr >= BOOTROM_SF_TABLE - 2u && addr < BOOTROM_SF_TABLE + 128u) {
+        value = 0;
+        if (addr >= BOOTROM_SF_TABLE) {
+            sf_off = (addr - BOOTROM_SF_TABLE) & ~3u;
+            if (sf_off == 0x00u) value = BOOTROM_FN_FADD | 1u;
+            else if (sf_off == 0x04u) value = BOOTROM_FN_FSUB | 1u;
+            else if (sf_off == 0x08u) value = BOOTROM_FN_FMUL | 1u;
+            else if (sf_off == 0x0cu) value = BOOTROM_FN_FDIV | 1u;
+            else if (sf_off == 0x24u) value = BOOTROM_FN_F2I | 1u;
+        }
+        *out_value = (u8)(value >> (((addr - BOOTROM_SF_TABLE) & 3u) * 8u));
+        return 1;
+    }
     if (addr >= 0x14u && addr < 0x1cu) {
         u32 base;
         if (addr < 0x16u) { value = BOOTROM_FUNC_TABLE; base = 0x14u; }
@@ -992,6 +1013,18 @@ static u32 reverse_bits(u32 value) {
     return out_value;
 }
 
+static float bits_to_float(u32 value) {
+    union { u32 u; float f; } conv;
+    conv.u = value;
+    return conv.f;
+}
+
+static u32 float_to_bits(float value) {
+    union { float f; u32 u; } conv;
+    conv.f = value;
+    return conv.u;
+}
+
 static int bootrom_function_call(Cpu *cpu, u32 target, u32 return_pc) {
     u32 dst;
     u32 src;
@@ -1039,6 +1072,16 @@ static int bootrom_function_call(Cpu *cpu, u32 target, u32 return_pc) {
         cpu->r[0] = 0;
     } else if (target == BOOTROM_FN_IF || target == BOOTROM_FN_EX || target == BOOTROM_FN_FC) {
         cpu->r[0] = 0;
+    } else if (target == BOOTROM_FN_FADD) {
+        cpu->r[0] = float_to_bits(bits_to_float(cpu->r[0]) + bits_to_float(cpu->r[1]));
+    } else if (target == BOOTROM_FN_FSUB) {
+        cpu->r[0] = float_to_bits(bits_to_float(cpu->r[0]) - bits_to_float(cpu->r[1]));
+    } else if (target == BOOTROM_FN_FMUL) {
+        cpu->r[0] = float_to_bits(bits_to_float(cpu->r[0]) * bits_to_float(cpu->r[1]));
+    } else if (target == BOOTROM_FN_FDIV) {
+        cpu->r[0] = float_to_bits(bits_to_float(cpu->r[0]) / bits_to_float(cpu->r[1]));
+    } else if (target == BOOTROM_FN_F2I) {
+        cpu->r[0] = (u32)(s32)bits_to_float(cpu->r[0]);
     } else return 0;
     cpu->r[15] = return_pc;
     if (trace_enabled(TRACE_CALLS)) {
@@ -1281,6 +1324,8 @@ static u32 mmio_read32(u32 addr) {
     if (addr == I2C_IC_CLR_TX_ABRT) { g_i2c.raw_intr &= ~I2C_RAW_TX_ABRT; return 0; }
     if (addr == I2C_IC_CLR_STOP) { g_i2c.raw_intr &= ~I2C_RAW_STOP_DET; return 0; }
     if (addr == I2C_IC_ENABLE) return g_i2c.enable;
+    if (addr == I2C_IC_TXFLR) return (u32)g_i2c.tx_level;
+    if (addr == I2C_IC_RXFLR) return (u32)g_i2c.rx_count;
     if (addr == I2C_IC_ENABLE_STATUS) return g_i2c.enable & 1u;
     if (addr == I2C_IC_STATUS) return (g_i2c.tx_level == 0 ? I2C_STATUS_TFE : 0u) |
         (g_i2c.tx_level < I2C_FIFO_SIZE ? I2C_STATUS_TFNF : 0u) |

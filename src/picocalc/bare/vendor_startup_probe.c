@@ -11,7 +11,7 @@
 #define SIO_SPINLOCK11 REG32(0xd000012cu)
 #define TIMERAWL REG32(0x40054028u)
 #define RTC_CTRL REG32(0x4005c00cu)
-#define I2C_IC_ENABLE_STATUS REG32(I2C1_BASE + 0x78u)
+#define I2C_IC_ENABLE_STATUS REG32(I2C1_BASE + 0x9cu)
 #define XIP_SSI_SR REG32(0x18000028u)
 
 typedef uint32_t (*rom_lookup_fn)(uint32_t table, uint32_t code);
