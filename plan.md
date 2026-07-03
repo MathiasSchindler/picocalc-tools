@@ -132,6 +132,8 @@ Validated firmware paths:
 | 8 | Replay binary identity hashes | Next | Extend `tests/emu_replays.tsv` or add a companion manifest with input binary content hashes so deterministic replay entries identify exactly which firmware image they cover. |
 | 9 | Strengthen focused vendor probes | In progress | The vendor-startup probe now covers the safe non-destructive SPI0 ready-status path in addition to Boot ROM lookups, SIO, RTC, timer, I2C, and XIP status. Continue adding probes only for hardware-safe behavior, avoiding real flash erase/program or raw XIP commands. |
 | 10 | Collect real PicoCalc reference screens | Next | Use real hardware runs of the six `vendor/images/*.bin` files to capture first-screen photos, time to first update, keyboard response, and companion-file requirements for emulator targets. |
+| 11 | Emulator profiling and syscall-style tracing | Next | Add a built-in profiler/trace mode that can report hot PCs, hot basic blocks or helper paths, MMIO/syscall-like transaction counts, and time spent in recognized busy-wait patterns. The first useful target is a deterministic text report that identifies where vendor images spend their 2M-step budget so speed work and wait-loop acceleration are guided by measurements rather than trace inspection. |
+| 12 | Refactor large emulator implementation | Next | Split the growing `bin_emu.c` into focused modules while preserving the no-libc host build: CPU/Thumb decode, memory map, Boot ROM helpers, RP2040 peripherals, LCD/output writers, tracing/profiling, and command-line/run-loop glue. Keep each extraction covered by `make emu-deterministic-tests` so refactoring does not change emulator behavior. |
 
 ## Hardware Experiment Ideas
 
