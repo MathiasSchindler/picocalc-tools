@@ -8,6 +8,8 @@ typedef unsigned long usize;
 
 #define FLASH_BASE 0x10000000u
 #define APP_BASE   0x10032000u
+#define BOOT2_BASE 0x10000000u
+#define BOOT2_SIZE 0x00000100u
 #define RAM_BASE   0x20000000u
 #define RAM_SIZE   0x00042000u
 #define LCD_W 320
@@ -21,8 +23,9 @@ typedef unsigned long usize;
 #define RESET_IO_BANK0         (1u << 5)
 #define RESET_I2C1             (1u << 4)
 #define RESET_PADS_BANK0       (1u << 8)
+#define RESET_SPI0             (1u << 16)
 #define RESET_SPI1             (1u << 17)
-#define RESET_MODELED_MASK     (RESET_IO_BANK0 | RESET_I2C1 | RESET_PADS_BANK0 | RESET_SPI1)
+#define RESET_MODELED_MASK     (RESET_IO_BANK0 | RESET_I2C1 | RESET_PADS_BANK0 | RESET_SPI0 | RESET_SPI1)
 #define RESET_DONE_MASK        0x01ffffffu
 
 #define IO_BANK0_BASE          0x40014000u
@@ -47,13 +50,22 @@ typedef unsigned long usize;
 #define PLL_SIZE               0x00001000u
 #define PLL_CS_LOCK            (1u << 31)
 
+#define SPI0_BASE              0x4003c000u
 #define SPI1_BASE              0x40040000u
-#define SPI_SSPCR0             (SPI1_BASE + 0x00u)
-#define SPI_SSPCR1             (SPI1_BASE + 0x04u)
-#define SPI_SSPDR              (SPI1_BASE + 0x08u)
-#define SPI_SSPSR              (SPI1_BASE + 0x0cu)
-#define SPI_SSPCPSR            (SPI1_BASE + 0x10u)
-#define SPI_SSPICR             (SPI1_BASE + 0x20u)
+#define SPI_SIZE               0x00001000u
+#define SPI_SSPCR0_OFF         0x00u
+#define SPI_SSPCR1_OFF         0x04u
+#define SPI_SSPDR_OFF          0x08u
+#define SPI_SSPSR_OFF          0x0cu
+#define SPI_SSPCPSR_OFF        0x10u
+#define SPI_SSPICR_OFF         0x20u
+#define SPI_SSPCR0             (SPI1_BASE + SPI_SSPCR0_OFF)
+#define SPI_SSPCR1             (SPI1_BASE + SPI_SSPCR1_OFF)
+#define SPI_SSPDR              (SPI1_BASE + SPI_SSPDR_OFF)
+#define SPI_SSPSR              (SPI1_BASE + SPI_SSPSR_OFF)
+#define SPI_SSPCPSR            (SPI1_BASE + SPI_SSPCPSR_OFF)
+#define SPI_SSPICR             (SPI1_BASE + SPI_SSPICR_OFF)
+#define SPI0_SSPDR             (SPI0_BASE + SPI_SSPDR_OFF)
 #define SPI_SR_TFE             (1u << 0)
 #define SPI_SR_TNF             (1u << 1)
 #define SPI_SR_RNE             (1u << 2)
@@ -99,6 +111,7 @@ typedef unsigned long usize;
 #define DMA_CTRL_DREQ_SHIFT    15u
 #define DMA_CTRL_DREQ_MASK     (0x3fu << DMA_CTRL_DREQ_SHIFT)
 #define DMA_CTRL_BUSY          (1u << 24)
+#define DREQ_SPI0_TX           16u
 #define DREQ_SPI1_TX           18u
 
 #define PPB_SYST_CSR           0xe000e010u
@@ -137,6 +150,7 @@ typedef unsigned long usize;
 #define SIO_DIV_REMAINDER      0xd0000074u
 #define SIO_DIV_CSR            0xd0000078u
 #define SIO_DIV_CSR_READY      (1u << 0)
+#define SIO_DIV_CSR_DIRTY      (1u << 1)
 #define SIO_SPINLOCK_BASE      0xd0000100u
 #define SIO_SPINLOCK_END       0xd0000180u
 
@@ -166,15 +180,27 @@ typedef unsigned long usize;
 #define BOOTROM_FN_IF          0x00001180u
 #define BOOTROM_FN_EX          0x00001190u
 #define BOOTROM_FN_FC          0x000011a0u
+#define BOOTROM_FN_RE          0x000011b0u
+#define BOOTROM_FN_RP          0x000011c0u
 #define ROM_CODE_IF            0x00004649u
 #define ROM_CODE_EX            0x00005845u
 #define ROM_CODE_FC            0x00004346u
+#define ROM_CODE_RE            0x00004552u
+#define ROM_CODE_RP            0x00005052u
 
 #define TIMER_BASE             0x40054000u
 #define TIMERAWH               (TIMER_BASE + 0x24u)
 #define TIMERAWL               (TIMER_BASE + 0x28u)
 
-#define XIP_SSI_SR             0x18000028u
+#define RTC_BASE               0x4005c000u
+#define RTC_SIZE               0x00001000u
+#define RTC_CTRL               0x0cu
+#define RTC_CTRL_ACTIVE        (1u << 1)
+
+#define XIP_SSI_BASE           0x18000000u
+#define XIP_SSI_SIZE           0x00000100u
+#define XIP_SSI_SR             (XIP_SSI_BASE + 0x28u)
+#define XIP_SSI_DR0            (XIP_SSI_BASE + 0x60u)
 
 #define LCD_CS_PIN             13u
 #define LCD_DC_PIN             14u
@@ -185,6 +211,7 @@ typedef unsigned long usize;
 #define TRACE_BASE             (1u << 0)
 #define TRACE_CALLS            (1u << 1)
 #define TRACE_UNKNOWN_MMIO     (1u << 2)
+#define TRACE_XIP              (1u << 3)
 
 
 #define AT_FDCWD (-100)
@@ -245,6 +272,7 @@ static u32 g_first_lcd_nonblack_y;
 static u32 g_first_lcd_nonblack_rgb;
 static u32 g_first_lcd_nonblack_pc;
 static u32 g_first_lcd_nonblack_cycles;
+static int g_skip_tick_after_exception_return;
 static u32 g_resets_reset;
 static u32 g_gpio_out;
 static u32 g_gpio_oe;
@@ -253,12 +281,16 @@ static u32 g_sio_divisor;
 static u32 g_sio_quotient;
 static u32 g_sio_remainder;
 static int g_sio_div_signed;
+static int g_sio_div_dirty;
 static u32 g_io_bank0[IO_BANK0_SIZE / 4u];
 static u32 g_pads_bank0[PADS_BANK0_SIZE / 4u];
 static u32 g_clocks[CLOCKS_SIZE / 4u];
 static u32 g_xosc[XOSC_SIZE / 4u];
 static u32 g_pll_sys[PLL_SIZE / 4u];
 static u32 g_pll_usb[PLL_SIZE / 4u];
+static u32 g_rtc[RTC_SIZE / 4u];
+static u32 g_xip_dr0_command;
+static u32 g_xip_dr0_reads;
 
 typedef struct {
     u32 r[16];
@@ -534,7 +566,8 @@ static int parse_trace_kinds(const char *s, u32 *out_mask) {
             if (token_eq(s + start, len, "base")) mask |= TRACE_BASE;
             else if (token_eq(s + start, len, "calls")) mask |= TRACE_CALLS;
             else if (token_eq(s + start, len, "unknown-mmio")) mask |= TRACE_UNKNOWN_MMIO;
-            else if (token_eq(s + start, len, "all")) mask |= TRACE_BASE | TRACE_CALLS | TRACE_UNKNOWN_MMIO;
+            else if (token_eq(s + start, len, "xip")) mask |= TRACE_XIP;
+            else if (token_eq(s + start, len, "all")) mask |= TRACE_BASE | TRACE_CALLS | TRACE_UNKNOWN_MMIO | TRACE_XIP;
             else return 0;
             if (ch == 0) break;
             start = pos + 1u;
@@ -642,6 +675,21 @@ static void report_lcd_milestones(void) {
         out(" first-nonblack=none");
     }
     out("\n");
+}
+
+static void report_pc_window(u32 pc) {
+    out(" pc-window=");
+    out_hex(mem_read16(pc));
+    out(",");
+    out_hex(mem_read16(pc + 2u));
+    out(",");
+    out_hex(mem_read16(pc + 4u));
+    out(",");
+    out_hex(mem_read16(pc + 6u));
+    out(",");
+    out_hex(mem_read16(pc + 8u));
+    out(",");
+    out_hex(mem_read16(pc + 10u));
 }
 
 static void terminal_enter_live(void) {
@@ -805,7 +853,13 @@ static void write_le32(u8 *p, u32 value) {
 static int flash_offset(u32 addr, usize *out_off) {
     if (addr < APP_BASE) return 0;
     *out_off = (usize)(addr - APP_BASE);
-    return *out_off < g_flash_size;
+    return *out_off < sizeof(g_flash);
+}
+
+static int boot2_stub_read32(u32 addr, u32 *out_value) {
+    if (addr < BOOT2_BASE || addr >= BOOT2_BASE + BOOT2_SIZE || (addr & 3u) != 0u) return 0;
+    *out_value = 0x47704770u;
+    return 1;
 }
 
 static int ram_offset(u32 addr, usize *out_off) {
@@ -817,7 +871,7 @@ static int ram_offset(u32 addr, usize *out_off) {
 static int executable_addr(u32 addr) {
     usize off;
     if ((addr & 1u) != 0u) return 0;
-    if (flash_offset(addr, &off) && off + 2u <= g_flash_size) return 1;
+    if (flash_offset(addr, &off) && off + 2u <= sizeof(g_flash)) return 1;
     if (ram_offset(addr, &off) && off + 2u <= RAM_SIZE) return 1;
     return 0;
 }
@@ -948,6 +1002,39 @@ static void trace_unknown_mmio(const char *kind, u32 addr, u32 value, u32 pc) {
     trace_text("\n");
 }
 
+static void trace_xip_mmio(const char *kind, u32 addr, u32 value) {
+    if (!trace_enabled(TRACE_XIP)) return;
+    trace_text(kind);
+    trace_text(" ");
+    trace_pair("addr", addr);
+    trace_text(" ");
+    trace_pair("value", value);
+    trace_text(" ");
+    trace_pair("pc", g_current_pc);
+    trace_text(" cycles=");
+    trace_hex32(g_cycles);
+    trace_text("\n");
+}
+
+static u32 xip_dr0_read(void) {
+    static const u8 unique_id[8] = { 0x4du, 0x53u, 0x50u, 0x43u, 0x41u, 0x4cu, 0x43u, 0x01u };
+    u32 value = 0;
+    if (g_xip_dr0_command == 0x4bu && g_xip_dr0_reads >= 5u && g_xip_dr0_reads < 13u) {
+        value = unique_id[g_xip_dr0_reads - 5u];
+    }
+    g_xip_dr0_reads += 1u;
+    trace_xip_mmio("xipr", XIP_SSI_DR0, value);
+    return value;
+}
+
+static void xip_dr0_write(u32 value) {
+    if ((value & 0xffu) == 0x4bu) {
+        g_xip_dr0_command = 0x4bu;
+        g_xip_dr0_reads = 0;
+    }
+    trace_xip_mmio("xipw", XIP_SSI_DR0, value);
+}
+
 static void trace_branch(const char *kind, u32 pc, u32 target, u32 lr, u16 op) {
     if (!trace_enabled(TRACE_CALLS)) return;
     trace_text(kind);
@@ -983,6 +1070,8 @@ static int bootrom_lookup_call(Cpu *cpu, u32 return_pc) {
         else if (code == ROM_CODE_IF) result = BOOTROM_FN_IF | 1u;
         else if (code == ROM_CODE_EX) result = BOOTROM_FN_EX | 1u;
         else if (code == ROM_CODE_FC) result = BOOTROM_FN_FC | 1u;
+        else if (code == ROM_CODE_RE) result = BOOTROM_FN_RE | 1u;
+        else if (code == ROM_CODE_RP) result = BOOTROM_FN_RP | 1u;
     }
     cpu->r[0] = result;
     cpu->r[15] = return_pc;
@@ -1051,12 +1140,15 @@ static int bootrom_function_call(Cpu *cpu, u32 target, u32 return_pc) {
         } else {
             for (i = 0; i < len; ++i) mem_write8(dst + i, mem_read8(src + i));
         }
-    } else if (target == BOOTROM_FN_IF || target == BOOTROM_FN_EX || target == BOOTROM_FN_FC) {
+    } else if (target == BOOTROM_FN_IF || target == BOOTROM_FN_EX || target == BOOTROM_FN_FC || target == BOOTROM_FN_RE || target == BOOTROM_FN_RP) {
         cpu->r[0] = 0;
     } else return 0;
     cpu->r[15] = return_pc;
     if (trace_enabled(TRACE_CALLS)) {
         trace_text("bootrom fn target="); trace_hex32(target);
+        trace_text(" r0="); trace_hex32(cpu->r[0]);
+        trace_text(" r1="); trace_hex32(cpu->r[1]);
+        trace_text(" r2="); trace_hex32(cpu->r[2]);
         trace_text(" return="); trace_hex32(return_pc);
         trace_text("\n");
     }
@@ -1116,6 +1208,18 @@ static u32 spi_read_data(void) {
     return byte;
 }
 
+static int spi_reg_offset(u32 addr, u32 *out_reg) {
+    if (addr >= SPI0_BASE && addr < SPI0_BASE + SPI_SIZE) {
+        *out_reg = addr - SPI0_BASE;
+        return 1;
+    }
+    if (addr >= SPI1_BASE && addr < SPI1_BASE + SPI_SIZE) {
+        *out_reg = addr - SPI1_BASE;
+        return 1;
+    }
+    return 0;
+}
+
 static void i2c_rx_push(u8 byte) {
     if (g_i2c.rx_count < I2C_FIFO_SIZE) {
         g_i2c.rx[(g_i2c.rx_head + g_i2c.rx_count) & (I2C_FIFO_SIZE - 1)] = byte;
@@ -1148,7 +1252,7 @@ static void dma_start_channel(int ch) {
     dma->ctrl_trig |= DMA_CTRL_BUSY;
     while (limit > 0u) {
         u32 value;
-        if (write_addr == SPI_SSPDR && dreq == DREQ_SPI1_TX) {
+        if ((write_addr == SPI_SSPDR && dreq == DREQ_SPI1_TX) || (write_addr == SPI0_SSPDR && dreq == DREQ_SPI0_TX)) {
             while (g_spi.tx_count >= SPI_FIFO_SIZE) {
                 g_cycles += 1u;
                 spi_service(0);
@@ -1164,7 +1268,7 @@ static void dma_start_channel(int ch) {
         if ((ctrl & DMA_CTRL_INCR_WRITE) != 0u) write_addr += width;
         limit -= 1u;
         g_cycles += 1u;
-        if (write_addr == SPI_SSPDR && dreq == DREQ_SPI1_TX) spi_service(0);
+        if ((write_addr == SPI_SSPDR && dreq == DREQ_SPI1_TX) || (write_addr == SPI0_SSPDR && dreq == DREQ_SPI0_TX)) spi_service(0);
     }
     dma->read_addr = read_addr;
     dma->write_addr = write_addr;
@@ -1208,10 +1312,15 @@ static int dma_write32(u32 addr, u32 value) {
 
 static u32 mmio_read32(u32 addr) {
     u32 value;
+    u32 spi_reg;
     if (dma_read32(addr, &value)) return value;
     if (clock_read32(addr, &value)) return value;
     if (register_bank_read(addr, IO_BANK0_BASE, IO_BANK0_SIZE, g_io_bank0, &value)) return value;
     if (register_bank_read(addr, PADS_BANK0_BASE, PADS_BANK0_SIZE, g_pads_bank0, &value)) return value;
+    if (register_bank_read(addr, RTC_BASE, RTC_SIZE, g_rtc, &value)) {
+        if (addr == RTC_BASE + RTC_CTRL && (value & 1u)) value |= RTC_CTRL_ACTIVE;
+        return value;
+    }
     if (addr == PPB_SYST_CSR) return g_core.syst_csr;
     if (addr == PPB_SYST_RVR) return g_core.syst_rvr;
     if (addr == PPB_SYST_CVR) return g_core.syst_cvr;
@@ -1221,21 +1330,24 @@ static u32 mmio_read32(u32 addr) {
     if (addr == PPB_SCB_VTOR) return g_core.vtor;
     if (addr == TIMERAWH) return 0u;
     if (addr == TIMERAWL) return g_cycles;
-    if (addr == XIP_SSI_SR) return 0x0du;
+    if (addr == XIP_SSI_SR) { trace_xip_mmio("xipr", addr, 0x0eu); return 0x0eu; }
+    if (addr == XIP_SSI_DR0) return xip_dr0_read();
     if (addr == SIO_CPUID) return 0u;
     if (addr == SIO_DIV_UDIVIDEND || addr == SIO_DIV_SDIVIDEND) return g_sio_dividend;
     if (addr == SIO_DIV_UDIVISOR || addr == SIO_DIV_SDIVISOR) return g_sio_divisor;
     if (addr == SIO_DIV_QUOTIENT) return g_sio_quotient;
     if (addr == SIO_DIV_REMAINDER) return g_sio_remainder;
-    if (addr == SIO_DIV_CSR) return SIO_DIV_CSR_READY;
+    if (addr == SIO_DIV_CSR) return SIO_DIV_CSR_READY | (g_sio_div_dirty ? SIO_DIV_CSR_DIRTY : 0u);
     if (addr >= SIO_SPINLOCK_BASE && addr < SIO_SPINLOCK_END && (addr & 3u) == 0u) return 1u;
     if (addr == RESETS_RESET) return g_resets_reset;
     if (addr == RESETS_DONE) return RESET_DONE_MASK & ~g_resets_reset;
-    if (addr == SPI_SSPCR0) return g_spi.cr0;
-    if (addr == SPI_SSPCR1) return g_spi.cr1;
-    if (addr == SPI_SSPDR) return spi_read_data();
-    if (addr == SPI_SSPSR) return spi_status();
-    if (addr == SPI_SSPCPSR) return g_spi.cpsr;
+    if (spi_reg_offset(addr, &spi_reg)) {
+        if (spi_reg == SPI_SSPCR0_OFF) return g_spi.cr0;
+        if (spi_reg == SPI_SSPCR1_OFF) return g_spi.cr1;
+        if (spi_reg == SPI_SSPDR_OFF) return spi_read_data();
+        if (spi_reg == SPI_SSPSR_OFF) return spi_status();
+        if (spi_reg == SPI_SSPCPSR_OFF) return g_spi.cpsr;
+    }
     if (addr == I2C_IC_CON) return g_i2c.con;
     if (addr == I2C_IC_TAR) return g_i2c.tar;
     if (addr == I2C_IC_DATA_CMD) {
@@ -1264,6 +1376,7 @@ static u32 mmio_read32(u32 addr) {
 }
 
 static void sio_div_update(void) {
+    g_sio_div_dirty = 0;
     if (g_sio_divisor == 0u) {
         g_sio_quotient = 0xffffffffu;
         g_sio_remainder = g_sio_dividend;
@@ -1416,10 +1529,12 @@ static void lcd_command(u8 command) {
 }
 
 static void mmio_write32(u32 addr, u32 value) {
+    u32 spi_reg;
     if (dma_write32(addr, value)) return;
     if (clock_write32(addr, value)) { trace_mmio("clkw", addr, value); return; }
     if (register_bank_write(addr, value, IO_BANK0_BASE, IO_BANK0_SIZE, g_io_bank0)) return;
     if (register_bank_write(addr, value, PADS_BANK0_BASE, PADS_BANK0_SIZE, g_pads_bank0)) return;
+    if (register_bank_write(addr, value, RTC_BASE, RTC_SIZE, g_rtc)) return;
     if (addr == PPB_SYST_CSR) { g_core.syst_csr = value & (SYST_CSR_ENABLE | SYST_CSR_TICKINT | SYST_CSR_CLKSOURCE); return; }
     if (addr == PPB_SYST_RVR) { g_core.syst_rvr = value & 0x00ffffffu; return; }
     if (addr == PPB_SYST_CVR) { g_core.syst_cvr = 0; g_core.syst_csr &= ~SYST_CSR_COUNTFLAG; return; }
@@ -1449,14 +1564,15 @@ static void mmio_write32(u32 addr, u32 value) {
     if (addr == SIO_DIV_UDIVISOR) { g_sio_div_signed = 0; g_sio_divisor = value; sio_div_update(); return; }
     if (addr == SIO_DIV_SDIVIDEND) { g_sio_div_signed = 1; g_sio_dividend = value; sio_div_update(); return; }
     if (addr == SIO_DIV_SDIVISOR) { g_sio_div_signed = 1; g_sio_divisor = value; sio_div_update(); return; }
+    if (addr == SIO_DIV_QUOTIENT) { g_sio_quotient = value; g_sio_div_dirty = 1; return; }
+    if (addr == SIO_DIV_REMAINDER) { g_sio_remainder = value; g_sio_div_dirty = 1; return; }
     if (addr >= SIO_SPINLOCK_BASE && addr < SIO_SPINLOCK_END && (addr & 3u) == 0u) return;
-    if (addr == SPI_SSPCR0) { g_spi.cr0 = value; return; }
-    if (addr == SPI_SSPCR1) { g_spi.cr1 = value; return; }
-    if (addr == SPI_SSPCPSR) { g_spi.cpsr = value; return; }
-    if (addr == SPI_SSPICR) { g_spi.overrun = 0; return; }
-    if (addr == SPI_SSPDR) {
-        spi_write_data((u8)value);
-        return;
+    if (spi_reg_offset(addr, &spi_reg)) {
+        if (spi_reg == SPI_SSPCR0_OFF) { g_spi.cr0 = value; return; }
+        if (spi_reg == SPI_SSPCR1_OFF) { g_spi.cr1 = value; return; }
+        if (spi_reg == SPI_SSPCPSR_OFF) { g_spi.cpsr = value; return; }
+        if (spi_reg == SPI_SSPICR_OFF) { g_spi.overrun = 0; return; }
+        if (spi_reg == SPI_SSPDR_OFF) { spi_write_data((u8)value); return; }
     }
     if (addr == I2C_IC_CON) { g_i2c.con = value; return; }
     if (addr == I2C_IC_TAR) { g_i2c.tar = value; return; }
@@ -1494,6 +1610,8 @@ static void mmio_write32(u32 addr, u32 value) {
     if (addr == I2C_IC_ENABLE) { g_i2c.enable = value; return; }
     if (addr == I2C_IC_SDA_HOLD) { g_i2c.sda_hold = value; return; }
     if (addr == I2C_IC_FS_SPKLEN) { g_i2c.fs_spklen = value; return; }
+    if (addr == XIP_SSI_DR0) { xip_dr0_write(value); return; }
+    if (addr >= XIP_SSI_BASE && addr < XIP_SSI_BASE + XIP_SSI_SIZE) { trace_xip_mmio("xipw", addr, value); return; }
     trace_unknown_mmio("mmiow", addr, value, 0u);
 }
 
@@ -1506,8 +1624,9 @@ static void lcd_spi_byte(u8 byte) {
 static u32 mem_read32(u32 addr) {
     usize off;
     u32 value;
-    if (flash_offset(addr, &off) && off + 4u <= g_flash_size) return read_le32(g_flash + off);
+    if (flash_offset(addr, &off) && off + 4u <= sizeof(g_flash)) return read_le32(g_flash + off);
     if (ram_offset(addr, &off) && off + 4u <= RAM_SIZE) return read_le32(g_ram + off);
+    if (boot2_stub_read32(addr, &value)) return value;
     if (bootrom_read32(addr, &value)) return value;
     return mmio_read32(addr);
 }
@@ -1515,7 +1634,7 @@ static u32 mem_read32(u32 addr) {
 static u16 mem_read16(u32 addr) {
     usize off;
     u16 value;
-    if (flash_offset(addr, &off) && off + 2u <= g_flash_size) return read_le16(g_flash + off);
+    if (flash_offset(addr, &off) && off + 2u <= sizeof(g_flash)) return read_le16(g_flash + off);
     if (ram_offset(addr, &off) && off + 2u <= RAM_SIZE) return read_le16(g_ram + off);
     if (bootrom_read16(addr, &value)) return value;
     return (u16)mem_read32(addr);
@@ -1524,7 +1643,7 @@ static u16 mem_read16(u32 addr) {
 static u8 mem_read8(u32 addr) {
     usize off;
     u8 value;
-    if (flash_offset(addr, &off) && off < g_flash_size) return g_flash[off];
+    if (flash_offset(addr, &off) && off < sizeof(g_flash)) return g_flash[off];
     if (ram_offset(addr, &off) && off < RAM_SIZE) return g_ram[off];
     if (bootrom_read8(addr, &value)) return value;
     return (u8)mem_read32(addr);
@@ -1780,13 +1899,15 @@ static int exception_return(Cpu *cpu, u32 value) {
     cpu_set_xpsr(cpu, mem_read32(sp + 28u));
     cpu->ipsr = 0;
     cpu->r[13] = sp + 32u;
+    g_skip_tick_after_exception_return = 1;
     if (g_trace_fd >= 0) { trace_text("exception return pc="); trace_hex32(cpu->r[15]); trace_text("\n"); }
     return 1;
 }
 
 static void peripherals_tick(Cpu *cpu) {
-    (void)cpu;
     spi_service(0);
+    if (g_skip_tick_after_exception_return) { g_skip_tick_after_exception_return = 0; return; }
+    if (cpu->ipsr != 0u) return;
     if ((g_core.syst_csr & SYST_CSR_ENABLE) != 0u) {
         if (g_core.syst_cvr == 0u) g_core.syst_cvr = g_core.syst_rvr;
         else g_core.syst_cvr -= 1u;
@@ -2218,7 +2339,9 @@ static int step(Cpu *cpu) {
 static int load_file(const char *path) {
     long fd = sys_openat(AT_FDCWD, path, O_RDONLY, 0);
     usize off = 0;
+    usize i;
     if (fd < 0) return -1;
+    for (i = 0; i < sizeof(g_flash); ++i) g_flash[i] = 0xffu;
     while (off < sizeof(g_flash)) {
         long got = sys_read((int)fd, g_flash + off, sizeof(g_flash) - off);
         if (got < 0) return -1;
@@ -2316,6 +2439,7 @@ static int run_bin(const char *in_path, const char *image_path, const char *key_
     g_first_lcd_nonblack_rgb = 0;
     g_first_lcd_nonblack_pc = 0;
     g_first_lcd_nonblack_cycles = 0;
+    g_skip_tick_after_exception_return = 0;
     g_resets_reset = 0;
     g_gpio_out = (1u << LCD_CS_PIN) | (1u << LCD_DC_PIN) | (1u << LCD_RST_PIN);
     g_gpio_oe = 0;
@@ -2324,6 +2448,7 @@ static int run_bin(const char *in_path, const char *image_path, const char *key_
     g_sio_quotient = 0xffffffffu;
     g_sio_remainder = 0;
     g_sio_div_signed = 0;
+    g_sio_div_dirty = 1;
     for (i = 0; i < (int)(IO_BANK0_SIZE / 4u); ++i) g_io_bank0[i] = 0;
     for (i = 0; i < (int)(PADS_BANK0_SIZE / 4u); ++i) g_pads_bank0[i] = 0;
     for (i = 0; i < (int)(CLOCKS_SIZE / 4u); ++i) g_clocks[i] = 0;
@@ -2332,6 +2457,9 @@ static int run_bin(const char *in_path, const char *image_path, const char *key_
         g_pll_sys[i] = 0;
         g_pll_usb[i] = 0;
     }
+    for (i = 0; i < (int)(RTC_SIZE / 4u); ++i) g_rtc[i] = 0;
+    g_xip_dr0_command = 0;
+    g_xip_dr0_reads = 0;
     g_spi.cr0 = 0;
     g_spi.cr1 = 0;
     g_spi.cpsr = 0;
@@ -2445,6 +2573,7 @@ static int run_bin(const char *in_path, const char *image_path, const char *key_
         out(" r4="); out_hex(cpu.r[4]); out(" r5="); out_hex(cpu.r[5]);
         out(" r6="); out_hex(cpu.r[6]); out(" r7="); out_hex(cpu.r[7]);
         out(" sp="); out_hex(cpu.r[13]); out(" lr="); out_hex(cpu.r[14]);
+        report_pc_window(cpu.r[15]);
         out("\n");
     }
     if (!path_has_frame_pattern(image_path) || g_frame_index == 0 || g_frame_index < g_target_frames) write_frame_output(image_path);
@@ -2470,7 +2599,7 @@ __attribute__((used)) int emu_main(int argc, char **argv) {
     int frames = 1;
     int i;
     if (argc < 3) {
-        out("usage: bin_emu input.bin output.png [key-script|-|@file] [--frames=N] [--trace[=path]] [--trace-kinds=base,calls,unknown-mmio|all] [--expect-hash=HEX] [--max-steps=N] [--fail-on-budget] [--report-milestones] [--live-terminal]\n");
+        out("usage: bin_emu input.bin output.png [key-script|-|@file] [--frames=N] [--trace[=path]] [--trace-kinds=base,calls,unknown-mmio,xip|all] [--expect-hash=HEX] [--max-steps=N] [--fail-on-budget] [--report-milestones] [--live-terminal]\n");
         return 1;
     }
     g_trace_fd = -1;

@@ -167,7 +167,7 @@ emu-vendor-probe: $(BIN_EMU) $(VENDOR_IMAGE_BINS)
 	@set +e; for f in $(VENDOR_IMAGE_BINS); do \
 		name=$$(basename "$$f" .bin); \
 		echo "=== $$name ==="; \
-		$(BIN_EMU) "$$f" "$(EMU_VENDOR_DIR)/$$name.png" --trace="$(EMU_VENDOR_DIR)/$$name.trace" --trace-kinds=base,calls,unknown-mmio --max-steps=2000000 --fail-on-budget --report-milestones; \
+		$(BIN_EMU) "$$f" "$(EMU_VENDOR_DIR)/$$name.png" --trace="$(EMU_VENDOR_DIR)/$$name.trace" --trace-kinds=base,calls,unknown-mmio,xip --max-steps=2000000 --fail-on-budget --report-milestones; \
 		echo "$$name exit=$$?"; \
 	done
 

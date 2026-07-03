@@ -10,6 +10,7 @@
 #define SIO_DIV_CSR REG32(0xd0000078u)
 #define SIO_SPINLOCK11 REG32(0xd000012cu)
 #define TIMERAWL REG32(0x40054028u)
+#define RTC_CTRL REG32(0x4005c00cu)
 #define I2C_IC_ENABLE_STATUS REG32(I2C1_BASE + 0x78u)
 #define XIP_SSI_SR REG32(0x18000028u)
 
@@ -79,11 +80,13 @@ static uint32_t bootrom_helper_probe(void) {
     uint32_t flash_connect = rom_lookup(func_table, ROM_CODE('I', 'F'));
     uint32_t flash_exit_xip = rom_lookup(func_table, ROM_CODE('E', 'X'));
     uint32_t flash_flush = rom_lookup(func_table, ROM_CODE('F', 'C'));
+    uint32_t flash_erase = rom_lookup(func_table, ROM_CODE('R', 'E'));
+    uint32_t flash_program = rom_lookup(func_table, ROM_CODE('R', 'P'));
     uint32_t ok = 1u;
     int i;
 
     if (clz == 0u || popcount == 0u || reverse == 0u || ctz == 0u || mem_set == 0u || mem_copy == 0u) ok = 0u;
-    if (sd == 0u || sf == 0u || flash_connect == 0u || flash_exit_xip == 0u || flash_flush == 0u) ok = 0u;
+    if (sd == 0u || sf == 0u || flash_connect == 0u || flash_exit_xip == 0u || flash_flush == 0u || flash_erase == 0u || flash_program == 0u) ok = 0u;
     if (clz(0x00f00000u) != 8u) ok = 0u;
     if (popcount(0xf0f00001u) != 9u) ok = 0u;
     if (reverse(0x00000003u) != 0xc0000000u) ok = 0u;
@@ -106,11 +109,24 @@ static uint32_t sio_probe(void) {
     return ((SIO_DIV_CSR & 1u) != 0u) && SIO_DIV_QUOTIENT == 142u && SIO_DIV_REMAINDER == 6u && lock != 0u;
 }
 
+static uint32_t rtc_probe(void) {
+    RTC_CTRL = 0u;
+    if ((RTC_CTRL & (1u << 1)) != 0u) return 0u;
+    RTC_CTRL = 1u;
+    return (RTC_CTRL & (1u << 1)) != 0u;
+}
+
+static uint32_t spi0_probe(void) {
+    reset_unreset(RESET_SPI0);
+    return (SPI0_SSPSR & (SPI_SR_TFE | SPI_SR_TNF)) == (SPI_SR_TFE | SPI_SR_TNF);
+}
+
 static uint32_t mmio_status_probe(void) {
     uint32_t timer0 = TIMERAWL;
     uint32_t timer1 = TIMERAWL;
+    uint32_t xip_status = XIP_SSI_SR;
     I2C_IC_ENABLE = 1u;
-    return timer1 >= timer0 && (I2C_IC_ENABLE_STATUS & 1u) != 0u && (XIP_SSI_SR & 0x0du) == 0x0du;
+    return timer1 >= timer0 && (I2C_IC_ENABLE_STATUS & 1u) != 0u && (xip_status & 0x0fu) == 0x0eu;
 }
 
 void bare_main(void) {
@@ -122,6 +138,8 @@ void bare_main(void) {
     if (primask_barrier_probe() != 2u) ok = 0u;
     if (!bootrom_helper_probe()) ok = 0u;
     if (!sio_probe()) ok = 0u;
+    if (!rtc_probe()) ok = 0u;
+    if (!spi0_probe()) ok = 0u;
     if (!mmio_status_probe()) ok = 0u;
 
     picocalc_lcd_fill_rect(18, 40, 301, 232, ok ? 0x003824u : 0x401000u);

@@ -15,6 +15,7 @@ typedef unsigned long size_t;
 #define RESET_IO_BANK0    (1u << 5)
 #define RESET_I2C1        (1u << 4)
 #define RESET_PADS_BANK0  (1u << 8)
+#define RESET_SPI0        (1u << 16)
 #define RESET_SPI1        (1u << 17)
 
 #define IO_BANK0_BASE     0x40014000u
@@ -37,6 +38,9 @@ typedef unsigned long size_t;
 #define SPI_SSPSR         REG32(SPI1_BASE + 0x0cu)
 #define SPI_SSPCPSR       REG32(SPI1_BASE + 0x10u)
 #define SPI_SSPICR        REG32(SPI1_BASE + 0x20u)
+
+#define SPI0_BASE         0x4003c000u
+#define SPI0_SSPSR        REG32(SPI0_BASE + 0x0cu)
 
 #define SPI_SR_TFE        (1u << 0)
 #define SPI_SR_TNF        (1u << 1)
