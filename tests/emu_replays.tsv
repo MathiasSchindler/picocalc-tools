@@ -1,0 +1,8 @@
+name	build_target	binary	key_input	options	trace	hash_var	expected_framebuffer_hash	output
+hello	bare-hello	build/bare/bare_hello.bin	-	-	-	EMU_HASH_HELLO	0x8ff880ad	build/emu/test_hello.png
+graphics	bare-graphics	build/bare/bare_graphics.bin	-	-	-	EMU_HASH_GRAPHICS	0x401ffcba	build/emu/test_graphics.png
+solve	bare-solve	build/bare/bare_solve.bin	@tests/solve_replay.keys	-	-	EMU_HASH_SOLVE	0x34c38b9e	build/emu/test_solve.png
+interrupt	bare-interrupt-probe	build/bare/bare_interrupt_probe.bin	-	-	build/emu/test_interrupt.trace	EMU_HASH_INTERRUPT	0x9a855e0b	build/emu/test_interrupt.png
+dma	bare-dma-probe	build/bare/bare_dma_probe.bin	-	-	build/emu/test_dma.trace	EMU_HASH_DMA	0x6837fa02	build/emu/test_dma.png
+thumb	bare-thumb-probe	build/bare/bare_thumb_probe.bin	-	-	-	EMU_HASH_THUMB	0x32d38172	build/emu/test_thumb.png
+vendor-startup	bare-vendor-startup-probe	build/bare/bare_vendor_startup_probe.bin	-	--trace-kinds=base,calls,unknown-mmio	build/emu/test_vendor_startup.trace	EMU_HASH_VENDOR_STARTUP	0x6867f247	build/emu/test_vendor_startup.png

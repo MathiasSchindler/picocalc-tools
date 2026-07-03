@@ -1,0 +1,141 @@
+# PicoCalc Emulator Feature Matrix
+
+This document describes the current emulator capability set. It is organized by whether a feature exists now and what its limitations are, not by when it was added.
+
+The emulator in scope here is `src/emulator/bin_emu.c`: a no-libc Linux program that runs the PicoCalc SD-boot RP2040 `.bin` firmware images produced by this repository and writes PNG framebuffer output by default. The PicoCalc GUI shell in `src/emulator/picocalc_shell.c` is listed separately because it wraps emulator output but does not emulate RP2040 execution.
+
+## Validation Snapshot
+
+Currently validated commands:
+
+```sh
+make -C /home/mathias/pico2 gui-hello gui-graphics gui-solve
+make -C /home/mathias/pico2 bin-emu-hello-trace bin-emu-graphics-frames
+make -C /home/mathias/pico2 emu-replay-manifest-check
+make -C /home/mathias/pico2 emu-deterministic-tests
+make -C /home/mathias/pico2 emu-vendor-probe
+```
+
+Validated firmware paths:
+
+- `build/bare/bare_hello.bin` produces `build/emu/bare_hello.png` and `build/gui/bare_hello_picocalc.png`.
+- `build/bare/bare_graphics.bin` produces `build/emu/bare_graphics.png`, numbered PNG frame captures, and `build/gui/bare_graphics_picocalc.png`.
+- `build/bare/bare_solve.bin` accepts scripted keyboard input `6x-3=0`, Enter, Ctrl-D and produces `build/emu/bare_solve.png` plus `build/gui/bare_solve_picocalc.png`.
+- `build/bare/bare_interrupt_probe.bin`, `build/bare/bare_dma_probe.bin`, `build/bare/bare_thumb_probe.bin`, and `build/bare/bare_vendor_startup_probe.bin` exercise focused exception, DMA, Thumb decoder, and vendor-startup paths.
+- The scripted solve output shows `x = 0.5000000000 (1/2)` with zero residual.
+- Vendor PicoCalc binaries are available for future compatibility tests. The files in `vendor/images/*.bin` have SD-app-style vectors for stack `0x20042000` and reset handlers near `0x10032000`; the BIOS and keyboard firmware binaries in `vendor/PicoCalc/Bin/*.bin` have different `0x0800xxxx` reset vectors and `0x20005000` stacks, so they likely require a different load base and MCU/peripheral scope.
+- `make emu-vendor-probe` now runs those SD-app-style vendor binaries as an investigation suite, writes artifacts under `build/vendor-emu`, reports first LCD milestones, and keeps going after failures. Current status: Lua reaches LCD command/pixel writes but only black pixels before budgeting; MP3 exits cleanly without LCD output; MicroPython, PicoMite, uLisp, and NES still stop before any LCD command.
+
+## Fully Implemented Emulator Features
+
+| Feature | Status | Explanation |
+| --- | --- | --- |
+| SD-boot `.bin` loading | Fully implemented | Loads raw PicoCalc SD-boot binaries linked at `0x10032000`. The vector table is read from the binary and the reset handler starts in Thumb mode. |
+| No-libc Linux host runtime | Fully implemented | The emulator uses `_start` and direct Linux syscalls for file I/O, stdout, and exit. It does not depend on glibc startup. |
+| Core register diagnostics | Fully implemented | Unsupported instruction and invalid execution stops print PC, opcode or address, step count, core registers, SP, and LR to make the next missing behavior easier to add. |
+| Fixed helper-address shortcuts removed | Fully implemented | The validated firmware paths execute the firmware delay, SPI, LCD drawing/text, keyboard read, and libgcc division paths instead of jumping over them by fixed helper address. |
+| PNG framebuffer output | Fully implemented | Writes mildly compressed RGB PNG files for the 320x320 screen framebuffer by default. The writer uses PNG row filters plus a fixed-Huffman RLE zlib stream and retains `.ppm` output only when a path explicitly ends in `.ppm`. |
+| Cascadia antialiased text screenshots | Fully implemented | The emulator executes the firmware renderer and observes the resulting LCD SPI pixel stream, so the generated 4-bit grayscale Cascadia font appears in screenshots through normal firmware behavior. |
+| PicoCalc keyboard register protocol | Fully implemented | Supports keyboard controller address `0x1f` and key register `0x09`. The emulator returns two-byte reports matching the current bare keyboard polling code. |
+| Scripted keyboard input | Fully implemented | The optional key-script argument supports plain characters plus escapes such as `\n` and `\x04`. The `bin-emu-solve` target uses this for the solver REPL. |
+| Replay-file keyboard input | Fully implemented | A key-script argument of `@path` loads key input from a file. This is useful for repeatable solver or UI tests. |
+| Multi-frame PNG capture | Fully implemented | If the output path contains `%d`, `--frames=N` writes numbered PNG frames such as `bare_graphics_frame_0.png`. |
+| Trace output | Fully implemented | `--trace` writes to stderr and `--trace=path` writes a compact transaction-level log. `--trace-kinds=base,calls,unknown-mmio|all` enables optional indirect branch/Boot ROM and unknown-MMIO diagnostics for vendor investigation. Current base trace events include LCD commands, I2C operations, DMA activity, exception entry/return, reset writes, and frame hashes. Raw SPI pixel bytes are intentionally not logged. |
+| LCD milestone reporting | Fully implemented | `--report-milestones` prints first LCD command, first framebuffer pixel write, and first nonblack pixel with PC and cycle context. `make emu-vendor-probe` enables it so each vendor binary reports whether it has reached display output. |
+| Deterministic replay/hash tests | Fully implemented | `make emu-deterministic-tests` runs hello, graphics, solve replay from `tests/solve_replay.keys`, interrupt, DMA, Thumb, and vendor-startup probe firmware with `--expect-hash=...`, failing if the final framebuffer hash changes. `tests/emu_replays.tsv` records the covered binaries, replay inputs, traces, outputs, and expected hashes. |
+| Focused interrupt probe firmware | Fully implemented | `src/bare/interrupt_probe.c` verifies the minimal exception path with `SVC`, repeated `SysTick`, exception return, and NVIC IRQ0, and trace output records the entries/returns. |
+| Focused DMA probe firmware | Fully implemented | `src/bare/dma_probe.c` transfers a generated RGB block to the LCD through DMA channel 0 writing SPI1 data MMIO, then verifies that path through deterministic hashes and DMA trace events. |
+| Focused Thumb probe firmware | Fully implemented | `src/bare/thumb_probe.c` contains a small inline-assembly repro for the Cortex-M0+ `LDRH` immediate instruction, keeping decoder growth tied to a local firmware image. |
+| Focused vendor-startup probe firmware | Fully implemented | `src/bare/vendor_startup_probe.c` exercises the vendor-derived startup surface now modeled by the emulator: `BLX` register calls, barriers, `PRIMASK`, Boot ROM lookup/helpers, SIO divider/spinlocks, timer reads, I2C enable-status, and XIP SSI ready status. |
+| PicoCalc-shaped GUI shell | Fully implemented | `picocalc_shell` wraps a 320x320 emulator screen image in a 900x1260 procedural PicoCalc-style mockup and writes PNG by default. It still accepts the internal raw PPM handoff used by Make targets. It is a static compositor, not a live GUI emulator. |
+
+## Partially Implemented Emulator Features
+
+| Feature | Status | Explanation |
+| --- | --- | --- |
+| Flash and RAM mapping | Partially implemented | Maps firmware bytes at the SD app flash base and maps RP2040 SRAM at `0x20000000` with the current firmware stack top at `0x20042000`. The flash buffer is large enough for the current local firmware and the larger vendor PicoMite SD-app image, but the model is still fixed-size and tailored to SD-app binaries. |
+| ARMv6-M Thumb interpreter | Partially implemented | Covers the Thumb subset used by the current hello, graphics, solver, focused probes, vendor startup paths reached so far, and needed libgcc routines. It is not a complete instruction-set implementation. |
+| SIO GPIO output/enable MMIO | Partially implemented | Models the SIO GPIO set/clear and output-enable registers needed by the bare LCD driver. LCD CS, DC, and RST state are derived from GPIO writes; full SIO behavior is not modeled. |
+| SIO divider and spinlocks | Partially implemented | Models CPUID, the hardware divider quotient/remainder registers, and simple spinlock acquire/release behavior used by vendor SDK startup. Full SIO FIFO, multicore, and detailed spinlock contention behavior are not modeled. |
+| IO bank and pad register state | Partially implemented | Writes in the IO bank and pad register ranges are stored and can be read back, so firmware that verifies pin configuration sees stable register state. Pin mux side effects, pad electrical behavior, pulls, interrupts, and input sampling are not deeply modeled. |
+| Reset controller MMIO | Partially implemented | Exposes reset, reset atomic aliases, and broad reset-done readback for SDK-style startup masks used by local and vendor SD-app binaries. It is not a complete reset tree with peripheral-specific reset side effects. |
+| XOSC, clock, and PLL startup stubs | Partially implemented | Stores common clock register writes, handles atomic register aliases, and reports XOSC stable, PLL lock, and source-specific clock selected status so vendor SDK-style startup can progress past early clock setup. This is readiness/readback modeling, not a full clock tree. |
+| SPI1 MMIO | Partially implemented | Models SPI1 control/status/data registers, TX/RX FIFO levels, busy state, and overrun state. Timing is approximate and tuned for useful firmware execution, not cycle-accurate SPI behavior. |
+| LCD SPI command stream | Partially implemented | Interprets the LCD command/data stream for address windows and memory writes, especially `CASET`/`RASET`/`RAMWR` style drawing. It also tracks common mode/config commands. The full LCD controller command set is not implemented. |
+| I2C1 MMIO | Partially implemented | Models the I2C1 registers used by the PicoCalc keyboard driver, including target address, data command, status, enable status, raw interrupt, stop clear, TX abort clear, and timing-related configuration registers. FIFO/timing behavior is approximate. |
+| Live stdin keyboard input | Partially implemented | A key-script argument of `-` reads nonblocking bytes from stdin. This is terminal-oriented input, not a graphical event loop. |
+| Terminal live PicoCalc view | Partially implemented | `--live-terminal` renders the framebuffer as an ANSI true-color terminal view and forwards noncanonical nonblocking stdin bytes into the existing keyboard path. It is useful for quick host interaction, but it is not an SDL/X11/Wayland graphical window. |
+| Busy-wait acceleration | Partially implemented | Recognizes simple countdown loops and the current graphics demo's volatile memory delay loop, then advances simulated cycles/time without interpreting every loop iteration. Other delay-loop shapes may still consume the instruction budget. |
+| Simulated cycle/time counters | Partially implemented | Maintains coarse cycle and simulated millisecond counters for delay acceleration, peripheral busy timing, trace output, and frame-boundary reporting. This is not cycle-accurate RP2040 timing. |
+| Frame-ready graphics stopping | Partially implemented | The emulator can stop at the current graphics demo's animation frame boundary instead of only at a raw instruction budget. This detection is based on recognized firmware delay behavior. |
+| Minimal Cortex-M0+ exception entry/return | Partially implemented | Models vector-table handler lookup, basic exception stack frames, LR exception return, `SVC`, `BKPT`, `SysTick`, and NVIC pending/enabled bits. It does not implement full ARM exception priority, all fault status registers, process stack, privilege transitions, or every exception side effect. |
+| SysTick | Partially implemented | Models basic enable/reload/current/countflag behavior and can pend SysTick through the minimal exception path. Timing is approximate. |
+| NVIC pending/enabled bits | Partially implemented | Provides basic pending and enable register behavior for low external IRQ numbers. Priority grouping, priority registers, masking subtleties, and complete interrupt semantics are not implemented. |
+| RP2040 DMA channel registers | Partially implemented | Models per-channel read address, write address, transfer count, and control trigger registers. Transfers execute immediately and can target MMIO such as SPI data. |
+| DMA memory-to-MMIO transfer | Partially implemented | Supports immediate transfers from memory to MMIO, including SPI data register writes. SPI1 TX DREQ pacing is approximated so DMA framebuffer blocks can feed the LCD path. Chaining, ring buffers, interrupts, sniffing, and detailed error behavior are not implemented. |
+| Minimal Boot ROM helper stubs | Partially implemented | Emulates the low-memory RP2040 ROM table pointers and lookup routine for the vendor SDK helpers observed so far: bit helpers, memory helpers, data-table lookups, and no-op flash helper calls. Boot ROM boot flow, flash programming behavior, USB boot, and unobserved ROM helpers are not implemented. |
+| Minimal timer readback | Partially implemented | Exposes raw timer high/low reads used by vendor delay code, backed by the emulator cycle counter. Alarms, IRQs, pause/debug behavior, and full timer register semantics are not modeled. |
+| Minimal XIP SSI status | Partially implemented | Returns ready status for the XIP SSI status register used by copied RAM flash helper stubs. XIP cache, SSI command execution, flash erase/program behavior, and cache maintenance are not modeled. |
+| Vendor PicoCalc binary compatibility suite | Partially implemented | `make emu-vendor-probe` runs Lua, MicroPython, MP3 player, NES, PicoMite, and uLisp SD-app `.bin` files from `vendor/images` with bounded step counts, traces, LCD milestone reports, and PNG artifacts. MP3 now gets past its Boot ROM null branch and exits cleanly in the emulator. Lua reaches LCD command `0xe0` and black framebuffer pixel writes before budgeting; MicroPython, PicoMite, and uLisp budget in copied RAM XIP helper loops before LCD output; NES invalid-executes through a later null branch before LCD output. The BIOS and keyboard `.bin` files under `vendor/PicoCalc/Bin` remain separate references with different vectors/load bases. |
+| Hardware keyboard matrix/controller emulation | Partially implemented | The high-level PicoCalc I2C keyboard report protocol is modeled from scripts/stdin. The internal keyboard MCU, modifier state machine, repeat timing, brightness controls, and full key-event behavior are not emulated. |
+| Live GUI keyboard mapping | Partially implemented | Terminal stdin bytes can feed the existing keyboard path in live mode, but there is no graphical keyboard event mapping yet. |
+| Deterministic replay bundle | Partially implemented | Hash-verified Make targets, a solve replay file, `tests/emu_replays.tsv`, and `make emu-replay-manifest-check` now exist. The manifest records binary paths, key inputs, trace outputs, Makefile hash variables, and expected frame hashes, but it is not yet a self-contained archived replay bundle with binary identity hashes and timing controls. |
+
+## Not Yet Implemented Emulator Features
+
+| Feature | Status | Explanation |
+| --- | --- | --- |
+| Complete ARMv6-M instruction set | Not yet implemented | The interpreter grows from instructions observed in local firmware. Unseen encodings may still stop as unsupported. |
+| Cycle-accurate Cortex-M0+ execution | Not yet implemented | Instruction timing, pipeline effects, bus stalls, flash/XIP wait states, and precise exception timing are not modeled. |
+| Complete Cortex-M exception model | Not yet implemented | Basic entry/return exists, but priority, nesting details, privilege state, process stack pointer, fault escalation, system control registers, and complete fault status behavior are missing. |
+| Dual-core RP2040 behavior | Not yet implemented | Only one CPU context is modeled. Core 1 boot, inter-core FIFO, spinlocks, and multicore synchronization are absent. |
+| Full RP2040 clock tree | Not yet implemented | Minimal readiness stubs exist, but real PLL frequencies, clock mux behavior, oscillator state, clock gating, and derived peripheral clocks are not modeled. |
+| Full reset tree | Not yet implemented | The reset registers and atomic aliases needed by current firmware work for modeled peripherals, but peripheral-specific reset timing, reset side effects, and all reset bits are not modeled. |
+| Full IO bank and pad behavior | Not yet implemented | Firmware can write and read back the IO bank and pad register ranges, but full GPIO function muxing, pad electrical behavior, pulls, interrupts, and input sampling are not modeled. |
+| Complete SPI peripheral | Not yet implemented | The SPI1 path needed by the LCD works, with approximate FIFO/busy behavior. SPI modes, clock phase/polarity edge cases, real serial timing, interrupts, DMA pacing, and all error/status details are incomplete. |
+| Complete I2C peripheral | Not yet implemented | The keyboard polling path works. Arbitration, clock stretching, detailed abort reasons, slave mode, restart timing, interrupts, and full FIFO semantics are incomplete. |
+| Complete LCD controller | Not yet implemented | Address windows, pixel writes, and common configuration command state are implemented for current firmware. Actual scrolling, rotation transforms, pixel formats beyond the current path, gamma/display control effects, readback, and many controller commands are still missing or state-only. |
+| Full DMA controller | Not yet implemented | Basic immediate channel transfers exist. DREQ pacing, channel chaining, IRQs, priorities, ring mode, byte swapping, sniff CRC, aliases, and detailed busy/error state are missing. |
+| PIO | Not yet implemented | No PIO state machines, FIFOs, instruction memory, IRQs, or pin behavior are modeled. |
+| UART | Not yet implemented | UART registers and serial I/O are not modeled. |
+| USB | Not yet implemented | USB device/host controller behavior is not modeled. |
+| ADC | Not yet implemented | ADC registers and analog input behavior are not modeled. |
+| PWM | Not yet implemented | PWM slices, counters, compare registers, and pin output behavior are not modeled. |
+| Complete timers and alarms | Not yet implemented | Minimal raw timer reads exist, but RP2040 timer registers, alarms, pause/debug behavior, and timer IRQs are not modeled apart from the separate minimal SysTick model. |
+| Watchdog | Not yet implemented | Watchdog registers, tick generation, and reset behavior are not modeled. |
+| RTC | Not yet implemented | Real-time clock registers and interrupts are not modeled. |
+| Complete XIP SSI and flash controller | Not yet implemented | The firmware image is mapped as memory directly and a minimal XIP SSI status read exists. XIP cache, SSI command behavior, flash erase/program, and cache maintenance behavior are absent. |
+| Complete Boot ROM | Not yet implemented | The emulator starts at the SD app vector table and has only targeted ROM table/helper stubs. It does not emulate RP2040 Boot ROM boot flow, UF2 loading, USB mass storage, or the PicoCalc SD bootloader itself. |
+| Memory protection and bus faults | Not yet implemented | Invalid accesses generally read as zero or are ignored unless they lead to unsupported execution. Bus fault behavior is not faithful. |
+| Semihosting/debug probe behavior | Not yet implemented | SWD, debug registers, semihosting, breakpoints beyond minimal `BKPT` exception handling, and debugger interaction are absent. |
+| Live graphical window | Not yet implemented | `--live-terminal` provides a live ANSI terminal view and keyboard byte forwarding. There is still no SDL/X11/Wayland window, graphical event loop, or graphical PicoCalc shell. |
+| Audio | Not yet implemented | No speaker, PWM audio, I2S, or audio output path is modeled. |
+| SD card filesystem/media emulation | Not yet implemented | The emulator loads one host `.bin` file. It does not emulate SD card block I/O, FAT filesystems, or firmware file selection. |
+
+## Practical Next Priorities
+
+| Priority | Feature | Status | Explanation |
+| --- | --- | --- | --- |
+| 1 | Vendor runtime budget diagnosis | In progress | Call/branch, Boot ROM, unknown-MMIO, and LCD milestone traces now classify several startup blockers. Current frontier: Lua reaches LCD command `0xe0` plus black pixel writes before budgeting near `0x200001f4`, MicroPython/PicoMite/uLisp wait in copied RAM XIP helper loops before LCD output, and NES reaches a later null branch before LCD output. |
+| 2 | Copied RAM XIP helper loops | Next | MicroPython, PicoMite, and uLisp all budget inside copied RAM code that appears to poll XIP/flash-helper state. Trace the loop exits and model only the missing XIP/flash status needed to leave those loops. |
+| 3 | NES late null-branch diagnosis | Next | NES gets past early startup but later branches through `0x00000000`. Use call/branch traces to identify the source table or callback before adding another Boot ROM, vector, or peripheral stub. |
+| 4 | Lua LCD/RAM blocker | Next | Lua reaches LCD command `0xe0`, writes black pixels, then budgets near RAM/peripheral code at `0x200001f4` with `r6=0x4003c000`. Classify whether the blocker is LCD init sequencing, SPI/LCD pixel format, or a nearby peripheral loop. |
+| 5 | Strengthen clock/reset modeling | In progress | Added clock atomic-alias writes, dual XOSC stable-bit compatibility, and source-specific clock selected readback. Full clock/reset semantics remain future work. |
+| 6 | Improve LCD compatibility | Next | Extend LCD command/data handling only where vendor traces show unsupported commands, pixel formats, scrolling, or rotation behavior that blocks visible output. |
+| 7 | Improve SD/media emulation path | Next | Determine whether MP3 and NES need companion SD files, then sketch the smallest host-backed block or file interface needed to let those apps reach their first screen. |
+| 8 | Replay binary identity hashes | Next | Extend `tests/emu_replays.tsv` or add a companion manifest with input binary content hashes so deterministic replay entries identify exactly which firmware image they cover. |
+| 9 | Focused XIP polling repro firmware | Next | Convert the copied RAM XIP helper wait pattern into a local bare probe, so future XIP SSI or flash-helper modeling changes can be validated without depending on large vendor binaries. |
+| 10 | Collect real PicoCalc reference screens | Next | Use real hardware runs of the six `vendor/images/*.bin` files to capture first-screen photos, time to first update, keyboard response, and companion-file requirements for emulator targets. |
+
+## Hardware Experiment Ideas
+
+Useful real PicoCalc observations for the vendor images:
+
+- Boot each `vendor/images/*.bin` image from SD and record the first visible screen, approximate time to first display update, and whether it reacts to keyboard input.
+- For Lua, MicroPython, PicoMite, and uLisp, note whether the prompt appears without additional SD files, and which keys produce visible input.
+- For MP3 player and NES, note whether they require companion files on the SD card before drawing anything useful.
+- If possible, capture a photo of the first stable screen for each image; those can become expected emulator screenshots once the vendor paths reach LCD output.
+
+## Working Rule
+
+Keep the emulator targeted and test-driven. A feature should be marked implemented only when a local firmware path or focused test exercises it. If behavior is only stubbed well enough for initialization to proceed, keep it marked partial and state the limitation directly.

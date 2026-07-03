@@ -1,0 +1,24 @@
+#ifndef PICOCALC_SOLVE_RUNTIME_H
+#define PICOCALC_SOLVE_RUNTIME_H
+
+#include <stddef.h>
+
+void *memcpy(void *dst, const void *src, size_t count);
+int memcmp(const void *left, const void *right, size_t count);
+void *memmove(void *dst, const void *src, size_t count);
+void *memset(void *buffer, int byte_value, size_t count);
+
+size_t rt_strlen(const char *text);
+int rt_strcmp(const char *lhs, const char *rhs);
+int rt_strncmp(const char *lhs, const char *rhs, size_t count);
+void rt_copy_string(char *dst, size_t dst_size, const char *src);
+void rt_memset(void *buffer, int byte_value, size_t count);
+int rt_parse_uint(const char *text, unsigned long long *value_out);
+
+int rt_write_all(int fd, const void *data, size_t count);
+int rt_write_cstr(int fd, const char *text);
+int rt_write_line(int fd, const char *text);
+int rt_write_char(int fd, char ch);
+int rt_write_uint(int fd, unsigned long long value);
+
+#endif
