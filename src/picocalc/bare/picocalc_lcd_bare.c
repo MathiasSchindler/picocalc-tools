@@ -204,6 +204,17 @@ void picocalc_lcd_fill_rect(int x1, int y1, int x2, int y2, unsigned int rgb) {
     lcd_fill_rect(x1, y1, x2, y2, rgb);
 }
 
+void picocalc_lcd_blit_rgb(int x, int y, int width, int height, const unsigned char *rgb) {
+    if (width <= 0 || height <= 0) return;
+    if (x < 0 || y < 0 || x + width > LCD_WIDTH || y + height > LCD_HEIGHT) return;
+    lcd_set_window(x, y, x + width - 1, y + height - 1);
+    gpio_put(LCD_DC, 1);
+    gpio_put(LCD_CS, 0);
+    spi_write(rgb, (size_t)width * (size_t)height * 3u);
+    spi_finish();
+    gpio_put(LCD_CS, 1);
+}
+
 static unsigned int blend_channel(unsigned int fg, unsigned int bg, unsigned int alpha) {
     return (bg * (15u - alpha) + fg * alpha + 7u) / 15u;
 }

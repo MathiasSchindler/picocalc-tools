@@ -132,6 +132,22 @@ make bare-benchmark
 make bare-diagnostics
 ```
 
+There is also an SDK-free animated cube demo:
+
+```sh
+make bare-cube
+make bin-emu-cube
+make bin-emu-cube-gif
+```
+
+`bare-cube` writes `build/bare/bare_cube.bin`. It renders a fixed-point 3D cube directly on the PicoCalc LCD, with Left/Right cycling wireframe, solid, and colored modes, and Up/Down adjusting rotation speed; WASD are accepted as fallback controls. The default mode is a hardware-friendly wireframe renderer with colored edge groups and vertex markers so the first screen is visibly a cube rather than a flat face. Rotation now uses a fixed-point sine lookup table rather than the earlier smoothstep approximation, so the cube should rotate rigidly instead of stretching or bouncing. The top line shows the current mode, speed, last key code, and measured FPS. Real hardware currently reports about 14 FPS across modes and speeds, suggesting the frame rate is LCD/blit-bound rather than geometry-bound.
+
+`make bin-emu-cube` writes `build/emu/bare_cube.png` as a first-frame preview. `make bin-emu-cube-gif` writes `build/emu/bare_cube.gif`, a 45-frame animated GIF at the nearest GIF timing to 15 FPS. You can override the capture parameters, for example:
+
+```sh
+make bin-emu-cube-gif CUBE_GIF_FPS=25 CUBE_GIF_FRAMES=75
+```
+
 `bare-benchmark` writes `build/bare/bare_benchmark.bin`. It displays one screen of timing results measured with the RP2040 raw timer register: NOP loop, integer ALU loop, 32-bit multiply loop, 32-bit unsigned division loop, 256 KiB byte-copy loop, timer-read loop, and a small LCD fill-rate measurement. The matching emulator run is:
 
 ```sh
@@ -168,7 +184,7 @@ build/emu/bin_emu build/bare/bare_solve.bin build/emu/bare_solve.png @keys.txt
 build/emu/bin_emu build/bare/bare_solve.bin build/emu/bare_solve.png -
 ```
 
-`--trace=path` writes compact transaction-level logs for LCD commands, I2C operations, DMA activity, exception entry/return, and frame hashes. `--trace-kinds=base,calls,unknown-mmio,xip|all` can add indirect branch/Boot ROM helper traces, unmodeled MMIO diagnostics, and XIP SSI status/data-register diagnostics; `make emu-vendor-probe` enables those richer trace kinds. `--report-milestones` prints the first LCD command, first pixel write, and first nonblack pixel with PC/cycle context; the vendor probe enables it to quickly classify whether an image has reached display output. A key-script argument of `@path` replays keys from a file, while `-` reads live keys from nonblocking stdin. If the output image path contains `%d`, `--frames=N` writes numbered PNG frames such as `bare_graphics_frame_0.png` and `bare_graphics_frame_1.png`. `--flash-state=PATH` loads an existing 2 MiB emulated flash image when present, overlays the current input `.bin` at the PicoCalc SD-app offset, and saves the mutated flash buffer on exit or emulation failure; this is meant for vendor firmware that initializes or updates persistent flash metadata. `--expect-hash=HEX` verifies the final framebuffer hash and exits nonzero on drift; `make emu-deterministic-tests` uses that mode for hello, graphics, solve, interrupt, DMA, Thumb, and vendor-startup probe firmware. The replay manifest in `tests/emu_replays.tsv` records the binaries, key inputs, trace outputs, hash variables, and expected framebuffer hashes covered by that deterministic suite; `make emu-replay-manifest-check` verifies the manifest hashes against the Makefile.
+`--trace=path` writes compact transaction-level logs for LCD commands, I2C operations, DMA activity, exception entry/return, and frame hashes. `--trace-kinds=base,calls,unknown-mmio,xip|all` can add indirect branch/Boot ROM helper traces, unmodeled MMIO diagnostics, and XIP SSI status/data-register diagnostics; `make emu-vendor-probe` enables those richer trace kinds. `--report-milestones` prints the first LCD command, first pixel write, and first nonblack pixel with PC/cycle context; the vendor probe enables it to quickly classify whether an image has reached display output. A key-script argument of `@path` replays keys from a file, while `-` reads live keys from nonblocking stdin. If the output image path contains `%d`, `--frames=N` writes numbered PNG frames such as `bare_graphics_frame_0.png` and `bare_graphics_frame_1.png`. If the output path ends in `.gif`, `--frames=N --gif-fps=N` writes a looping animated GIF directly from captured emulator frames, using a built-in RGB332 palette and no external encoder. `--flash-state=PATH` loads an existing 2 MiB emulated flash image when present, overlays the current input `.bin` at the PicoCalc SD-app offset, and saves the mutated flash buffer on exit or emulation failure; this is meant for vendor firmware that initializes or updates persistent flash metadata. `--expect-hash=HEX` verifies the final framebuffer hash and exits nonzero on drift; `make emu-deterministic-tests` uses that mode for hello, graphics, solve, interrupt, DMA, Thumb, and vendor-startup probe firmware. The replay manifest in `tests/emu_replays.tsv` records the binaries, key inputs, trace outputs, hash variables, and expected framebuffer hashes covered by that deterministic suite; `make emu-replay-manifest-check` verifies the manifest hashes against the Makefile.
 
 Vendor PicoCalc SD-app images can be probed with:
 
@@ -176,7 +192,7 @@ Vendor PicoCalc SD-app images can be probed with:
 make emu-vendor-probe
 ```
 
-This runs the SD-app-style binaries in `vendor/images`, writes PNG/trace artifacts under `build/vendor-emu`, and keeps going after individual failures. It is an investigation target, not a passing compatibility suite yet. The current emulator gets those binaries through vector loading, early reset/clock setup, targeted Boot ROM helper lookup, SIO divider/spinlock setup, selected RAM helper paths, a low-flash boot2 return stub, a flash buffer rooted at `0x10000000`, erased-flash reads beyond the loaded `.bin`, optional persistent flash-state files, a deterministic XIP `0x4b` unique-ID response, emulated Boot ROM flash erase/program helpers, SPI APB aliases, 16-bit LCD pixel decoding, and a minimal UART0 status path. After calibrating `TIMERAWL` toward real microseconds, the fixed 2M-step vendor probe budget no longer reaches some of the earlier fast-timer LCD frontiers; MP3 still exits cleanly and NES still reaches its null callback, while Lua, MicroPython, PicoMite, and uLisp now need larger budgets or timer-wait acceleration for deeper comparison.
+This runs the SD-app-style binaries in `vendor/images`, writes PNG/trace artifacts under `build/vendor-emu`, and keeps going after individual failures. It is an investigation target, not a passing compatibility suite yet. The current emulator gets those binaries through vector loading, early reset/clock setup, targeted Boot ROM helper lookup, SIO divider/spinlock setup, selected RAM helper paths, a low-flash boot2 return stub, a flash buffer rooted at `0x10000000`, erased-flash reads beyond the loaded `.bin`, optional persistent flash-state files, a deterministic XIP `0x4b` unique-ID response, emulated Boot ROM flash erase/program helpers, SPI APB aliases, 16-bit LCD pixel decoding, a minimal UART0 status path, hardware-calibrated raw timer reads, and conservative timer-wait acceleration. MP3 and PicoMite currently exit cleanly without LCD output; Lua reaches 6x8 RGB565 glyph-cell drawing before budgeting later in the application, but the emulator text is still not reliably readable while real hardware shows a black screen with white `Welcome to`, yellow `pico lua`, and a white `lua>` prompt; uLisp reaches the interactive prompt (`uLisp 4.8f`, `22280> _`); MicroPython still loops in a null storage/metadata path; NES still reaches a divider-wrapper null callback before LCD output. The emulator records LCD `INVON`/`INVOFF` state for traces, but does not invert PNG framebuffer pixels because the non-inverted PNG output matches the observed PicoCalc display.
 
 For a terminal-hosted live view, run one of:
 

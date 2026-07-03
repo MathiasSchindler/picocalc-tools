@@ -31,8 +31,12 @@ EMU_HASH_THUMB := 0x32d38172
 EMU_HASH_VENDOR_STARTUP := 0x6867f247
 EMU_VENDOR_DIR := $(BUILD_DIR)/vendor-emu
 VENDOR_IMAGE_BINS := vendor/images/Lua_180a58e.bin vendor/images/MicroPython_fa8b24c.bin vendor/images/MP3player_v0.5.bin vendor/images/PicoCalc_NES_v1.0.bin vendor/images/PicoMite_cbf6d71.bin vendor/images/uLisp_4.8f.bin
+CUBE_GIF_FRAMES ?= 45
+CUBE_GIF_FPS ?= 15
+CUBE_GIF_MAX_STEPS ?= 80000000
 PNG_WRITER_OBJ := $(EMU_DIR)/png_writer.o
-BIN_EMU_OBJS := $(EMU_DIR)/bin_emu.o $(PNG_WRITER_OBJ)
+GIF_WRITER_OBJ := $(EMU_DIR)/gif_writer.o
+BIN_EMU_OBJS := $(EMU_DIR)/bin_emu.o $(PNG_WRITER_OBJ) $(GIF_WRITER_OBJ)
 GUI_DIR := $(BUILD_DIR)/gui
 PICOCALC_SHELL := $(EMU_DIR)/picocalc_shell
 PICOCALC_SHELL_OBJS := $(EMU_DIR)/picocalc_shell.o $(PNG_WRITER_OBJ)
@@ -62,6 +66,8 @@ BARE_SOLVE_ELF := $(BARE_DIR)/bare_solve.elf
 BARE_SOLVE_BIN := $(BARE_DIR)/bare_solve.bin
 BARE_GRAPHICS_ELF := $(BARE_DIR)/bare_graphics.elf
 BARE_GRAPHICS_BIN := $(BARE_DIR)/bare_graphics.bin
+BARE_CUBE_ELF := $(BARE_DIR)/bare_cube.elf
+BARE_CUBE_BIN := $(BARE_DIR)/bare_cube.bin
 BARE_BENCHMARK_ELF := $(BARE_DIR)/bare_benchmark.elf
 BARE_BENCHMARK_BIN := $(BARE_DIR)/bare_benchmark.bin
 BARE_DIAGNOSTICS_ELF := $(BARE_DIR)/bare_diagnostics.elf
@@ -82,6 +88,7 @@ BARE_KEYS_OBJS := $(BARE_DIR)/start.o $(BARE_DIR)/picocalc_lcd_bare.o $(BARE_DIR
 BARE_SOLVE_FIXED_OBJS := $(BARE_DIR)/start.o $(BARE_DIR)/picocalc_lcd_bare.o $(BARE_DIR)/solve_fixed.o $(BARE_DIR)/solve.o $(BARE_DIR)/support.o
 BARE_SOLVE_OBJS := $(BARE_DIR)/start.o $(BARE_DIR)/picocalc_lcd_bare.o $(BARE_DIR)/picocalc_kbd_bare.o $(BARE_DIR)/solve_repl.o $(BARE_DIR)/solve_repl_bare_input.o $(BARE_DIR)/solve.o $(BARE_DIR)/support.o
 BARE_GRAPHICS_OBJS := $(BARE_DIR)/start.o $(BARE_DIR)/picocalc_lcd_bare.o $(BARE_DIR)/graphics_demo.o
+BARE_CUBE_OBJS := $(BARE_DIR)/start.o $(BARE_DIR)/picocalc_lcd_bare.o $(BARE_DIR)/picocalc_kbd_bare.o $(BARE_DIR)/cube.o
 BARE_BENCHMARK_OBJS := $(BARE_DIR)/start.o $(BARE_DIR)/picocalc_lcd_bare.o $(BARE_DIR)/benchmark.o
 BARE_DIAGNOSTICS_OBJS := $(BARE_DIR)/start.o $(BARE_DIR)/picocalc_lcd_bare.o $(BARE_DIR)/picocalc_kbd_bare.o $(BARE_DIR)/diagnostics.o
 BARE_INTERRUPT_OBJS := $(BARE_DIR)/start.o $(BARE_DIR)/picocalc_lcd_bare.o $(BARE_DIR)/interrupt_probe.o
@@ -89,7 +96,7 @@ BARE_DMA_OBJS := $(BARE_DIR)/start.o $(BARE_DIR)/picocalc_lcd_bare.o $(BARE_DIR)
 BARE_THUMB_OBJS := $(BARE_DIR)/start.o $(BARE_DIR)/picocalc_lcd_bare.o $(BARE_DIR)/thumb_probe.o
 BARE_VENDOR_STARTUP_OBJS := $(BARE_DIR)/start.o $(BARE_DIR)/picocalc_lcd_bare.o $(BARE_DIR)/vendor_startup_probe.o
 
-.PHONY: all arm-probe bare-benchmark bare-diagnostics bare-dma-probe bare-graphics bare-hello bare-interrupt-probe bare-keys bare-solve bare-solve-fixed bare-thumb-probe bare-vendor-startup-probe bin-emu-benchmark bin-emu-diagnostics bin-emu-dma-probe bin-emu-graphics bin-emu-graphics-frames bin-emu-hello bin-emu-hello-trace bin-emu-interrupt-probe bin-emu-live-hello bin-emu-live-solve bin-emu-solve bin-emu-thumb-probe bin-emu-vendor-startup-probe clean emu-deterministic-tests emu-replay-manifest-check emu-vendor-probe font-cascadia gui-graphics gui-hello gui-solve sim-graphics sim-solve-fixed sim-solve-repl smoke
+.PHONY: all arm-probe bare-benchmark bare-cube bare-diagnostics bare-dma-probe bare-graphics bare-hello bare-interrupt-probe bare-keys bare-solve bare-solve-fixed bare-thumb-probe bare-vendor-startup-probe bin-emu-benchmark bin-emu-cube bin-emu-cube-gif bin-emu-diagnostics bin-emu-dma-probe bin-emu-graphics bin-emu-graphics-frames bin-emu-hello bin-emu-hello-trace bin-emu-interrupt-probe bin-emu-live-hello bin-emu-live-solve bin-emu-solve bin-emu-thumb-probe bin-emu-vendor-startup-probe clean emu-deterministic-tests emu-replay-manifest-check emu-vendor-probe font-cascadia gui-graphics gui-hello gui-solve sim-graphics sim-solve-fixed sim-solve-repl smoke
 
 all: $(HOST_SOLVE)
 
@@ -142,6 +149,12 @@ bin-emu-graphics: $(BIN_EMU) $(BARE_GRAPHICS_BIN)
 
 bin-emu-graphics-frames: $(BIN_EMU) $(BARE_GRAPHICS_BIN)
 	$(BIN_EMU) $(BARE_GRAPHICS_BIN) '$(EMU_DIR)/bare_graphics_frame_%d.png' --frames=2
+
+bin-emu-cube: $(BIN_EMU) $(BARE_CUBE_BIN)
+	$(BIN_EMU) $(BARE_CUBE_BIN) $(EMU_DIR)/bare_cube.png
+
+bin-emu-cube-gif: $(BIN_EMU) $(BARE_CUBE_BIN)
+	$(BIN_EMU) $(BARE_CUBE_BIN) $(EMU_DIR)/bare_cube.gif --frames=$(CUBE_GIF_FRAMES) --gif-fps=$(CUBE_GIF_FPS) --max-steps=$(CUBE_GIF_MAX_STEPS)
 
 bin-emu-solve: $(BIN_EMU) $(BARE_SOLVE_BIN)
 	$(BIN_EMU) $(BARE_SOLVE_BIN) $(EMU_DIR)/bare_solve.png '6x-3=0\n\x04'
@@ -260,7 +273,7 @@ $(BARE_DIR)/support.o: src/support.c | $(BARE_DIR)
 
 $(SIM_DIR)/picocalc_lcd_sim.o $(BARE_DIR)/picocalc_lcd_bare.o: $(FONTGEN_HEADER) $(PICOCALC_BARE_SRC_DIR)/picocalc_font.h
 
-$(BARE_HELLO_OBJS) $(BARE_KEYS_OBJS) $(BARE_SOLVE_FIXED_OBJS) $(BARE_SOLVE_OBJS) $(BARE_GRAPHICS_OBJS) $(BARE_BENCHMARK_OBJS) $(BARE_DIAGNOSTICS_OBJS) $(BARE_INTERRUPT_OBJS) $(BARE_DMA_OBJS) $(BARE_THUMB_OBJS) $(BARE_VENDOR_STARTUP_OBJS): $(PICOCALC_BARE_SRC_DIR)/rp2040_regs.h $(PICOCALC_BARE_SRC_DIR)/picocalc_lcd_bare.h $(PICOCALC_BARE_SRC_DIR)/picocalc_kbd_bare.h
+$(BARE_HELLO_OBJS) $(BARE_KEYS_OBJS) $(BARE_SOLVE_FIXED_OBJS) $(BARE_SOLVE_OBJS) $(BARE_GRAPHICS_OBJS) $(BARE_CUBE_OBJS) $(BARE_BENCHMARK_OBJS) $(BARE_DIAGNOSTICS_OBJS) $(BARE_INTERRUPT_OBJS) $(BARE_DMA_OBJS) $(BARE_THUMB_OBJS) $(BARE_VENDOR_STARTUP_OBJS): $(PICOCALC_BARE_SRC_DIR)/rp2040_regs.h $(PICOCALC_BARE_SRC_DIR)/picocalc_lcd_bare.h $(PICOCALC_BARE_SRC_DIR)/picocalc_kbd_bare.h
 
 $(BARE_HELLO_ELF): $(BARE_HELLO_OBJS) $(PICOCALC_BARE_SRC_DIR)/memmap_sd_rp2040.ld
 	$(BARE_CC) $(BARE_CFLAGS) $(BARE_LDFLAGS) $(BARE_HELLO_OBJS) $(BARE_LDLIBS) -o $@
@@ -311,6 +324,16 @@ $(BARE_GRAPHICS_BIN): $(BARE_GRAPHICS_ELF)
 	od -An -tx4 -N8 $@
 
 bare-graphics: $(BARE_GRAPHICS_BIN)
+
+$(BARE_CUBE_ELF): $(BARE_CUBE_OBJS) $(PICOCALC_BARE_SRC_DIR)/memmap_sd_rp2040.ld
+	$(BARE_CC) $(BARE_CFLAGS) $(BARE_LDFLAGS) $(BARE_CUBE_OBJS) $(BARE_LDLIBS) -o $@
+
+$(BARE_CUBE_BIN): $(BARE_CUBE_ELF)
+	$(BARE_OBJCOPY) -O binary $< $@
+	$(BARE_SIZE) $<
+	od -An -tx4 -N8 $@
+
+bare-cube: $(BARE_CUBE_BIN)
 
 $(BARE_BENCHMARK_ELF): $(BARE_BENCHMARK_OBJS) $(PICOCALC_BARE_SRC_DIR)/memmap_sd_rp2040.ld
 	$(BARE_CC) $(BARE_CFLAGS) $(BARE_LDFLAGS) $(BARE_BENCHMARK_OBJS) $(BARE_LDLIBS) -o $@

@@ -1,4 +1,5 @@
 #include "host_nolibc.h"
+#include "gif_writer.h"
 #include "png_writer.h"
 
 #define FLASH_BASE 0x10000000u
@@ -199,6 +200,7 @@
 #define TIMERAWH               (TIMER_BASE + 0x24u)
 #define TIMERAWL               (TIMER_BASE + 0x28u)
 #define TIMER_CYCLES_PER_US    100u
+#define TIMER_WAIT_ACCEL_US    1000u
 
 #define RTC_BASE               0x4005c000u
 #define RTC_SIZE               0x00001000u
@@ -230,6 +232,7 @@ static usize g_flash_size;
 static u8 g_ram[RAM_SIZE];
 static u8 g_framebuffer[LCD_W * LCD_H * 3u];
 static u8 g_png_work[PNG_RGB8_WORK_SIZE(LCD_W, LCD_H)];
+static GifWriter g_gif;
 static const char *g_key_script;
 static char g_key_file[4096];
 static usize g_key_script_pos;
@@ -247,6 +250,9 @@ static int g_live_terminal;
 static int g_fail_on_budget;
 static int g_report_milestones;
 static u32 g_max_steps;
+static int g_gif_active;
+static int g_gif_fd;
+static int g_gif_fps;
 static const char *g_flash_state_path;
 static u32 g_current_pc;
 static int g_frame_index;
@@ -456,6 +462,14 @@ static int path_has_frame_pattern(const char *path) {
         i += 1u;
     }
     return 0;
+}
+
+static int path_is_gif(const char *path) {
+    return str_ends(path, ".gif");
+}
+
+static int path_is_frame_capture(const char *path) {
+    return path_has_frame_pattern(path) || path_is_gif(path);
 }
 
 static void append_dec(char *out_path, usize *out_pos, int value) {
@@ -1787,6 +1801,83 @@ static int try_accelerate_memory_delay_loop(Cpu *cpu) {
     return 1;
 }
 
+static int try_accelerate_timer_wait_loop(Cpu *cpu) {
+    u32 pc = cpu->r[15];
+    u16 op0 = mem_read16(pc);
+    u16 op1 = mem_read16(pc + 2u);
+    u32 loop_pc;
+    u32 scan_pc;
+    int saw_high = 0;
+    int saw_low = 0;
+    if (op0 != 0xbf20u) return 0;
+    if ((op1 & 0xf800u) != 0xe000u) return 0;
+    loop_pc = pc + 6u + sx((u32)(op1 & 0x07ffu) << 1, 12);
+    if (loop_pc >= pc || pc - loop_pc > 96u) return 0;
+    for (scan_pc = loop_pc; scan_pc < pc; scan_pc += 2u) {
+        u16 op = mem_read16(scan_pc);
+        if ((op & 0xf800u) == 0x6800u) {
+            u32 base_reg = (op >> 3) & 7u;
+            u32 offset = ((op >> 6) & 0x1fu) << 2;
+            if (cpu->r[base_reg] == TIMER_BASE) {
+                if (offset == 0x24u) saw_high = 1;
+                if (offset == 0x28u) saw_low = 1;
+            }
+        }
+    }
+    if (!saw_high || !saw_low) return 0;
+    g_cycles += TIMER_WAIT_ACCEL_US * TIMER_CYCLES_PER_US;
+    g_sim_ms += TIMER_WAIT_ACCEL_US / 1000u;
+    cpu->r[15] = pc + 2u;
+    cpu->steps += 1u;
+    return 1;
+}
+
+static int nearby_timer_load_seen(Cpu *cpu, u32 start_pc, u32 end_pc) {
+    u32 timer_base_regs = 0u;
+    u32 scan_pc;
+    int saw_timer_load = 0;
+    for (scan_pc = start_pc; scan_pc < end_pc; scan_pc += 2u) {
+        u16 op = mem_read16(scan_pc);
+        if ((op & 0xf800u) == 0x4800u) {
+            u32 literal_addr = (scan_pc + 4u) & ~3u;
+            u32 target_reg = (op >> 8) & 7u;
+            literal_addr += (u32)(op & 0xffu) << 2;
+            if (mem_read32(literal_addr) == TIMER_BASE) timer_base_regs |= 1u << target_reg;
+        }
+        if ((op & 0xf800u) == 0x6800u) {
+            u32 base_reg = (op >> 3) & 7u;
+            u32 offset = ((op >> 6) & 0x1fu) << 2;
+            if ((cpu->r[base_reg] == TIMER_BASE || (timer_base_regs & (1u << base_reg)) != 0u) &&
+                    (offset == 0x24u || offset == 0x28u)) {
+                saw_timer_load = 1;
+            }
+        }
+    }
+    return saw_timer_load;
+}
+
+static int try_accelerate_timer_poll_branch(Cpu *cpu) {
+    u32 pc = cpu->r[15];
+    u16 op = mem_read16(pc);
+    u32 branch_target;
+    u32 scan_start;
+    int cond;
+    int taken;
+    if ((op & 0xf000u) != 0xd000u || (op & 0x0f00u) == 0x0f00u) return 0;
+    branch_target = pc + 4u + sx((u32)(op & 0xffu) << 1, 9);
+    cond = (op >> 8) & 15;
+    taken = cond_true(cpu, cond);
+    if (!taken && branch_target < pc) return 0;
+    if (taken && branch_target > pc) return 0;
+    scan_start = pc > 64u ? pc - 64u : pc;
+    if (!nearby_timer_load_seen(cpu, scan_start, pc)) return 0;
+    g_cycles += TIMER_WAIT_ACCEL_US * TIMER_CYCLES_PER_US;
+    g_sim_ms += TIMER_WAIT_ACCEL_US / 1000u;
+    cpu->r[15] = taken ? branch_target : pc + 2u;
+    cpu->steps += 1u;
+    return 1;
+}
+
 static u32 cpu_xpsr(const Cpu *cpu) {
     return (cpu->n << 31) | (cpu->z << 30) | (cpu->c << 29) | (cpu->v << 28) | (1u << 24) | (cpu->ipsr & 0x1ffu);
 }
@@ -2335,6 +2426,11 @@ static int png_fd_write(void *ctx, const void *data, png_usize count) {
     return sys_write(fd, data, count) == (long)count ? 0 : -1;
 }
 
+static int gif_fd_write(void *ctx, const void *data, gif_usize count) {
+    int fd = *(int *)ctx;
+    return sys_write(fd, data, count) == (long)count ? 0 : -1;
+}
+
 static void write_png(const char *path) {
     int fd = (int)sys_openat(AT_FDCWD, path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (fd < 0) return;
@@ -2346,11 +2442,40 @@ static void write_image(const char *path) {
     else write_png(path);
 }
 
+static int gif_start(const char *path) {
+    if (g_gif_active) return 0;
+    g_gif_fd = (int)sys_openat(AT_FDCWD, path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (g_gif_fd < 0) return -1;
+    if (gif_begin_rgb8(&g_gif, gif_fd_write, &g_gif_fd, LCD_W, LCD_H, (unsigned int)g_gif_fps) != 0) {
+        (void)sys_close(g_gif_fd);
+        g_gif_fd = -1;
+        return -1;
+    }
+    g_gif_active = 1;
+    return 0;
+}
+
+static int gif_finish(void) {
+    int result = 0;
+    if (!g_gif_active) return 0;
+    if (gif_end(&g_gif) != 0) result = -1;
+    (void)sys_close(g_gif_fd);
+    g_gif_active = 0;
+    g_gif_fd = -1;
+    return result;
+}
+
 static void write_frame_output(const char *image_path) {
     char frame_path[512];
     u32 hash = framebuffer_hash();
     g_last_output_hash = hash;
-    if (path_has_frame_pattern(image_path)) {
+    if (path_is_gif(image_path)) {
+        if (gif_start(image_path) == 0) (void)gif_write_frame_rgb8(&g_gif, g_framebuffer);
+        terminal_render_live();
+        out("wrote gif frame "); out_hex((u32)g_frame_index); out(" "); out(image_path); out(" hash="); out_hex(hash); out("\n");
+        if (g_trace_fd >= 0) { trace_text("gif-frame index="); trace_hex32((u32)g_frame_index); trace_text(" hash="); trace_hex32(hash); trace_text("\n"); }
+        g_frame_index += 1;
+    } else if (path_has_frame_pattern(image_path)) {
         format_frame_path(image_path, g_frame_index, frame_path, sizeof(frame_path));
         write_image(frame_path);
         terminal_render_live();
@@ -2471,6 +2596,8 @@ static int run_bin(const char *in_path, const char *image_path, const char *key_
     g_core.syst_rvr = 0;
     g_core.syst_cvr = 0;
     g_saved_termios_valid = 0;
+    g_gif_active = 0;
+    g_gif_fd = -1;
     lcd_gpio_sync();
     if (str_eq(key_script == 0 ? "" : key_script, "-")) {
         long flags = sys_fcntl(0, F_GETFL, 0);
@@ -2512,7 +2639,7 @@ static int run_bin(const char *in_path, const char *image_path, const char *key_
         if (try_accelerate_delay_loop(&cpu)) continue;
         if (try_accelerate_memory_delay_loop(&cpu)) {
             spi_service(1);
-            if (path_has_frame_pattern(image_path)) {
+            if (path_is_frame_capture(image_path)) {
                 write_frame_output(image_path);
                 if (g_frame_index >= g_target_frames) break;
                 g_frame_ready = 0;
@@ -2520,6 +2647,8 @@ static int run_bin(const char *in_path, const char *image_path, const char *key_
             }
             break;
         }
+        if (try_accelerate_timer_wait_loop(&cpu)) continue;
+        if (try_accelerate_timer_poll_branch(&cpu)) continue;
         if (step(&cpu) != 0) {
             out("emulation stopped at step "); out_hex(cpu.steps);
             out(" pc="); out_hex(pc);
@@ -2551,7 +2680,8 @@ static int run_bin(const char *in_path, const char *image_path, const char *key_
         report_pc_window(cpu.r[15]);
         out("\n");
     }
-    if (!path_has_frame_pattern(image_path) || g_frame_index == 0 || g_frame_index < g_target_frames) write_frame_output(image_path);
+    if (!path_is_frame_capture(image_path) || g_frame_index == 0 || g_frame_index < g_target_frames) write_frame_output(image_path);
+    if (gif_finish() != 0) out("gif write failure\n");
     report_lcd_milestones();
     if (g_fail_on_budget && cpu.steps >= g_max_steps) {
         save_flash_state();
@@ -2577,7 +2707,7 @@ __attribute__((used)) int emu_main(int argc, char **argv) {
     int frames = 1;
     int i;
     if (argc < 3) {
-        out("usage: bin_emu input.bin output.png [key-script|-|@file] [--frames=N] [--trace[=path]] [--trace-kinds=base,calls,unknown-mmio,xip|all] [--expect-hash=HEX] [--max-steps=N] [--fail-on-budget] [--report-milestones] [--live-terminal] [--flash-state=PATH]\n");
+        out("usage: bin_emu input.bin output.png|output.gif [key-script|-|@file] [--frames=N] [--gif-fps=N] [--trace[=path]] [--trace-kinds=base,calls,unknown-mmio,xip|all] [--expect-hash=HEX] [--max-steps=N] [--fail-on-budget] [--report-milestones] [--live-terminal] [--flash-state=PATH]\n");
         return 1;
     }
     g_trace_fd = -1;
@@ -2588,10 +2718,16 @@ __attribute__((used)) int emu_main(int argc, char **argv) {
     g_report_milestones = 0;
     g_flash_state_path = 0;
     g_max_steps = 20000000u;
+    g_gif_fps = 15;
     for (i = 3; i < argc; ++i) {
         if (str_starts(argv[i], "--frames=")) {
             if (!parse_dec(argv[i] + 9, &frames)) {
                 out("invalid --frames value\n");
+                return 1;
+            }
+        } else if (str_starts(argv[i], "--gif-fps=")) {
+            if (!parse_dec(argv[i] + 10, &g_gif_fps) || g_gif_fps <= 0 || g_gif_fps > 100) {
+                out("invalid --gif-fps value\n");
                 return 1;
             }
         } else if (str_eq(argv[i], "--trace")) {
