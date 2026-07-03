@@ -198,6 +198,7 @@
 #define TIMER_BASE             0x40054000u
 #define TIMERAWH               (TIMER_BASE + 0x24u)
 #define TIMERAWL               (TIMER_BASE + 0x28u)
+#define TIMER_CYCLES_PER_US    100u
 
 #define RTC_BASE               0x4005c000u
 #define RTC_SIZE               0x00001000u
@@ -963,6 +964,10 @@ static u32 count_bits(u32 value) {
     return count;
 }
 
+static u32 timer_us_low(void) {
+    return g_cycles / TIMER_CYCLES_PER_US;
+}
+
 static u32 reverse_bits(u32 value) {
     u32 out_value = 0;
     int i;
@@ -1218,7 +1223,7 @@ static u32 mmio_read32(u32 addr) {
     if (addr == PPB_SCB_ICSR) return g_core.icsr | (g_core.nvic_pending != 0u ? (1u << 22) : 0u);
     if (addr == PPB_SCB_VTOR) return g_core.vtor;
     if (addr == TIMERAWH) return 0u;
-    if (addr == TIMERAWL) return g_cycles;
+    if (addr == TIMERAWL) return timer_us_low();
     if (addr == XIP_SSI_SR) { trace_xip_mmio("xipr", addr, 0x0eu); return 0x0eu; }
     if (addr == XIP_SSI_DR0) return xip_dr0_read();
     if (addr == SIO_CPUID) return 0u;

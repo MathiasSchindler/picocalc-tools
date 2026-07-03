@@ -125,15 +125,38 @@ make bare-graphics
 
 The simulator writes `build/sim/sim_graphics.ppm`. The PicoCalc build writes `build/bare/bare_graphics.bin`, which can be copied to the SD card's `firmware/` directory.
 
+Two additional SDK-free PicoCalc utility programs are available for hardware comparison and bring-up:
+
+```sh
+make bare-benchmark
+make bare-diagnostics
+```
+
+`bare-benchmark` writes `build/bare/bare_benchmark.bin`. It displays one screen of timing results measured with the RP2040 raw timer register: NOP loop, integer ALU loop, 32-bit multiply loop, 32-bit unsigned division loop, 256 KiB byte-copy loop, timer-read loop, and a small LCD fill-rate measurement. The matching emulator run is:
+
+```sh
+make bin-emu-benchmark
+```
+
+That writes `build/emu/bare_benchmark.png`. On real hardware the timer values are microseconds; in the emulator `TIMERAWL` currently reports `g_cycles / 100`, calibrated from the first PicoCalc benchmark run. That makes the simple CPU-loop results close enough for useful comparison, while LCD/SPI and peripheral-heavy lines still expose where the emulator is approximate.
+
+`bare-diagnostics` writes `build/bare/bare_diagnostics.bin`. It displays one screen of software-observable hardware checks: LCD visibility, raw timer progress, SD-app vector header, reset-done bits, SPI1 status, I2C1/keyboard controller status, Boot ROM lookup, SIO divider, RTC active bit, and XIP SSI status. The keyboard line shows a key code if a key is held while the program samples the controller. Real hardware has so far reported XIP SSI status `0x00000006`, while the emulator reports `0x0000000e`; both are treated as useful nonzero ready-ish status values rather than a complete XIP model. It deliberately does not claim to test hardware the RP2040 cannot observe from this firmware, such as audio output, USB devices, or SD card contents. The matching emulator run is:
+
+```sh
+make bin-emu-diagnostics
+```
+
 The first actual `.bin` emulator target runs SD-boot binaries directly on Linux without libc. It maps flash/RAM, interprets a growing ARMv6-M Thumb subset, models the PicoCalc LCD framebuffer, and writes mildly compressed PNG output:
 
 ```sh
 make bin-emu-hello
 make bin-emu-graphics
 make bin-emu-solve
+make bin-emu-benchmark
+make bin-emu-diagnostics
 ```
 
-These write `build/emu/bare_hello.png`, `build/emu/bare_graphics.png`, and `build/emu/bare_solve.png`. The solve target runs `bare_solve.bin` with a scripted keyboard input of `6x-3=0`, Enter, then Ctrl-D. The emulator currently targets the known bare firmware layout; it is a milestone-5 seed, not yet a general RP2040 emulator. It now executes the firmware's SPI LCD path, I2C keyboard path, text renderer, delay loops, and libgcc division code instead of jumping over those routines by fixed helper address. The scripted solve path depends on Thumb condition codes, `ADR`, carry-producing shifts, byte/halfword extend and reverse operations, and libgcc division/remainder behavior, all of which are now modeled closely enough for the linear result screenshot to show `x = 0.5000000000 (1/2)` with zero residual. If an output path explicitly ends in `.ppm`, the emulator still writes legacy raw `P6` PPM; the GUI targets use that only as an internal screen handoff.
+These write `build/emu/bare_hello.png`, `build/emu/bare_graphics.png`, `build/emu/bare_solve.png`, `build/emu/bare_benchmark.png`, and `build/emu/bare_diagnostics.png`. The solve target runs `bare_solve.bin` with a scripted keyboard input of `6x-3=0`, Enter, then Ctrl-D. The emulator currently targets the known bare firmware layout; it is a milestone-5 seed, not yet a general RP2040 emulator. It now executes the firmware's SPI LCD path, I2C keyboard path, text renderer, delay loops, and libgcc division code instead of jumping over those routines by fixed helper address. The scripted solve path depends on Thumb condition codes, `ADR`, carry-producing shifts, byte/halfword extend and reverse operations, and libgcc division/remainder behavior, all of which are now modeled closely enough for the linear result screenshot to show `x = 0.5000000000 (1/2)` with zero residual. If an output path explicitly ends in `.ppm`, the emulator still writes legacy raw `P6` PPM; the GUI targets use that only as an internal screen handoff.
 
 The emulator also has optional diagnostic and capture modes:
 
@@ -153,7 +176,7 @@ Vendor PicoCalc SD-app images can be probed with:
 make emu-vendor-probe
 ```
 
-This runs the SD-app-style binaries in `vendor/images`, writes PNG/trace artifacts under `build/vendor-emu`, and keeps going after individual failures. It is an investigation target, not a passing compatibility suite yet. The current emulator gets those binaries through vector loading, early reset/clock setup, targeted Boot ROM helper lookup, SIO divider/spinlock setup, selected RAM helper paths, a low-flash boot2 return stub, a flash buffer rooted at `0x10000000`, erased-flash reads beyond the loaded `.bin`, optional persistent flash-state files, a deterministic XIP `0x4b` unique-ID response, emulated Boot ROM flash erase/program helpers, SPI APB aliases, 16-bit LCD pixel decoding, and a minimal UART0 status path. MP3 and PicoMite currently exit cleanly without LCD output; uLisp renders recognizable white text (`uLisp 4.8f`, a newline, and `_`) and now budgets in a later allocator/idle scan; Lua reaches LCD writes but currently produces only a small RGB565-decoded stripe from repeated 6x8 windows across row 0; MicroPython passes RTC setup and copied flash helper paths before budgeting in a null storage/metadata loop around its SIO divider wrapper; NES reaches a divider-wrapper null callback before LCD output.
+This runs the SD-app-style binaries in `vendor/images`, writes PNG/trace artifacts under `build/vendor-emu`, and keeps going after individual failures. It is an investigation target, not a passing compatibility suite yet. The current emulator gets those binaries through vector loading, early reset/clock setup, targeted Boot ROM helper lookup, SIO divider/spinlock setup, selected RAM helper paths, a low-flash boot2 return stub, a flash buffer rooted at `0x10000000`, erased-flash reads beyond the loaded `.bin`, optional persistent flash-state files, a deterministic XIP `0x4b` unique-ID response, emulated Boot ROM flash erase/program helpers, SPI APB aliases, 16-bit LCD pixel decoding, and a minimal UART0 status path. After calibrating `TIMERAWL` toward real microseconds, the fixed 2M-step vendor probe budget no longer reaches some of the earlier fast-timer LCD frontiers; MP3 still exits cleanly and NES still reaches its null callback, while Lua, MicroPython, PicoMite, and uLisp now need larger budgets or timer-wait acceleration for deeper comparison.
 
 For a terminal-hosted live view, run one of:
 
