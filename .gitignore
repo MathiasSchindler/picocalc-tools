@@ -5,3 +5,5 @@ build-sdk-hello/
 vendor/*
 !vendor/newos/
 !vendor/newos/**
+
+test-data/
