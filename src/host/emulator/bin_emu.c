@@ -118,8 +118,17 @@
 #define PIO_SIZE               0x00001000u
 #define PIO_FSTAT_OFF          0x04u
 #define PIO_FDEBUG_OFF         0x08u
+#define PIO_TXF0_OFF           0x10u
+#define PIO_TXF3_OFF           0x1cu
+#define PIO_RXF0_OFF           0x20u
+#define PIO_RXF3_OFF           0x2cu
 #define PIO_FSTAT_RXEMPTY_MASK 0x00000f00u
 #define PIO_FSTAT_TXEMPTY_MASK 0x0f000000u
+
+#define CYW43_PIN_WL_REG_ON    23u
+#define CYW43_PIN_WL_DATA      24u
+#define CYW43_PIN_WL_CS        25u
+#define CYW43_PIN_WL_CLOCK     29u
 
 #define DMA_BASE               0x50000000u
 #define DMA_CH_STRIDE          0x40u
@@ -247,6 +256,15 @@ static usize g_symbol_name_used;
 #define g_gif_fd g_emu.gif_fd
 #define g_gif_fps g_emu.gif_fps
 #define g_flash_state_path g_emu.flash_state_path
+#define g_cyw43_wifi_fw_path g_emu.cyw43_wifi_fw_path
+#define g_cyw43_bt_fw_path g_emu.cyw43_bt_fw_path
+#define g_cyw43_nvram_path g_emu.cyw43_nvram_path
+#define g_cyw43_inventory g_emu.cyw43_inventory
+#define g_cyw43_model g_emu.cyw43_model
+#define g_cyw43_pio_tx_words g_emu.cyw43_pio_tx_words
+#define g_cyw43_pio_rx_words g_emu.cyw43_pio_rx_words
+#define g_cyw43_dma_events g_emu.cyw43_dma_events
+#define g_cyw43_gpio_events g_emu.cyw43_gpio_events
 #define g_current_pc g_emu.current_pc
 #define g_frame_index g_emu.frame_index
 #define g_target_frames g_emu.target_frames
@@ -540,6 +558,230 @@ static void out_symbol_for_pc(u32 pc) {
 static void out_pc(u32 pc) {
     out_hex(pc);
     out_symbol_for_pc(pc);
+}
+
+typedef struct {
+    u32 array_len;
+    u32 array_hash;
+    u32 wifi_fw_len;
+    u32 clm_len;
+} Cyw43BlobInfo;
+
+static int cyw43_token_number(const char *token, usize len, u32 *out_value) {
+    u32 value = 0;
+    usize pos = 0;
+    int base = 10;
+    if (len >= 2u && token[0] == '0' && (token[1] == 'x' || token[1] == 'X')) {
+        base = 16;
+        pos = 2u;
+    }
+    if (pos >= len) return 0;
+    while (pos < len) {
+        int digit = hex_value(token[pos]);
+        if (digit < 0 || digit >= base) return 0;
+        value = base == 16 ? ((value << 4) | (u32)digit) : (value * 10u + (u32)digit);
+        pos += 1u;
+    }
+    *out_value = value;
+    return 1;
+}
+
+static const char *cyw43_find_text(const char *line, const char *needle) {
+    usize pos = 0;
+    while (line[pos] != 0) {
+        usize npos = 0;
+        while (needle[npos] != 0 && line[pos + npos] == needle[npos]) npos += 1u;
+        if (needle[npos] == 0) return line + pos;
+        pos += 1u;
+    }
+    return 0;
+}
+
+static int cyw43_parse_define_value(const char *line, const char *name, u32 *out_value) {
+    const char *pos = cyw43_find_text(line, name);
+    u32 value = 0;
+    int any = 0;
+    if (pos == 0) return 0;
+    pos += str_len(name);
+    while (*pos != 0 && (*pos < '0' || *pos > '9')) pos += 1;
+    while (*pos >= '0' && *pos <= '9') {
+        value = value * 10u + (u32)(*pos - '0');
+        any = 1;
+        pos += 1;
+    }
+    if (!any) return 0;
+    *out_value = value;
+    return 1;
+}
+
+static void cyw43_scan_line(const char *line, Cyw43BlobInfo *info) {
+    u32 value;
+    if (cyw43_parse_define_value(line, "CYW43_WIFI_FW_LEN", &value)) info->wifi_fw_len = value;
+    if (cyw43_parse_define_value(line, "CYW43_CLM_LEN", &value)) info->clm_len = value;
+}
+
+static int cyw43_scan_header(const char *path, Cyw43BlobInfo *info) {
+    char line[256];
+    char token[32];
+    usize line_len = 0;
+    usize token_len = 0;
+    int in_array = 0;
+    int seen_initializer = 0;
+    int in_string = 0;
+    int escape_mode = 0;
+    u32 escape_value = 0;
+    int done_array = 0;
+    long fd = sys_openat(AT_FDCWD, path, O_RDONLY, 0);
+    if (fd < 0) return -1;
+    info->array_len = 0;
+    info->array_hash = 2166136261u;
+    info->wifi_fw_len = 0;
+    info->clm_len = 0;
+    while (1) {
+        char ch;
+        long got = sys_read((int)fd, &ch, 1u);
+        if (got < 0) { (void)sys_close((int)fd); return -1; }
+        if (got == 0) break;
+        if (line_len + 1u < sizeof(line)) line[line_len++] = ch;
+        if (ch == '\n') {
+            line[line_len] = 0;
+            cyw43_scan_line(line, info);
+            line_len = 0;
+        }
+        if (!done_array) {
+            if (!in_array) {
+                if (ch == '{') in_array = 1;
+                else if (ch == '=') seen_initializer = 1;
+                else if (seen_initializer && !in_string && ch == '"') in_string = 1;
+                else if (seen_initializer && !in_string && ch == ';' && info->array_len != 0u) done_array = 1;
+                else if (in_string) {
+                    if (escape_mode == 0) {
+                        if (ch == '\\') escape_mode = 1;
+                        else if (ch == '"') in_string = 0;
+                        else {
+                            info->array_hash = (info->array_hash ^ ((u32)(u8)ch)) * 16777619u;
+                            info->array_len += 1u;
+                        }
+                    } else if (escape_mode == 1) {
+                        if (ch == 'x' || ch == 'X') {
+                            escape_mode = 2;
+                            escape_value = 0;
+                        } else {
+                            info->array_hash = (info->array_hash ^ ((u32)(u8)ch)) * 16777619u;
+                            info->array_len += 1u;
+                            escape_mode = 0;
+                        }
+                    } else if (escape_mode == 2) {
+                        int digit = hex_value(ch);
+                        if (digit >= 0) {
+                            escape_value = (u32)digit << 4;
+                            escape_mode = 3;
+                        } else {
+                            escape_mode = 0;
+                        }
+                    } else {
+                        int digit = hex_value(ch);
+                        if (digit >= 0) escape_value |= (u32)digit;
+                        info->array_hash = (info->array_hash ^ (escape_value & 0xffu)) * 16777619u;
+                        info->array_len += 1u;
+                        escape_mode = 0;
+                    }
+                }
+            } else if (ch == '}') {
+                if (token_len != 0u) {
+                    u32 value;
+                    if (cyw43_token_number(token, token_len, &value)) {
+                        info->array_hash = (info->array_hash ^ (value & 0xffu)) * 16777619u;
+                        info->array_len += 1u;
+                    }
+                    token_len = 0;
+                }
+                done_array = 1;
+            } else if ((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F') || ch == 'x' || ch == 'X') {
+                if (token_len + 1u < sizeof(token)) token[token_len++] = ch;
+            } else if (token_len != 0u) {
+                u32 value;
+                if (cyw43_token_number(token, token_len, &value)) {
+                    info->array_hash = (info->array_hash ^ (value & 0xffu)) * 16777619u;
+                    info->array_len += 1u;
+                }
+                token_len = 0;
+            }
+        }
+    }
+    if (line_len != 0u) {
+        line[line_len] = 0;
+        cyw43_scan_line(line, info);
+    }
+    (void)sys_close((int)fd);
+    return done_array ? 0 : -1;
+}
+
+static void cyw43_report_blob(const char *label, const char *path) {
+    Cyw43BlobInfo info;
+    if (path == 0) return;
+    if (cyw43_scan_header(path, &info) != 0) {
+        out("cyw43 blob "); out(label); out(" path="); out(path); out(" error=read-or-parse\n");
+        return;
+    }
+    out("cyw43 blob "); out(label); out(" path="); out(path);
+    out(" bytes="); out_hex(info.array_len);
+    out(" hash="); out_hex(info.array_hash);
+    if (info.wifi_fw_len != 0u) { out(" wifi-fw-len="); out_hex(info.wifi_fw_len); }
+    if (info.clm_len != 0u) { out(" clm-len="); out_hex(info.clm_len); }
+    out("\n");
+    if (trace_enabled(TRACE_CYW43)) {
+        trace_text("cyw43-blob label="); trace_text(label);
+        trace_text(" bytes="); trace_hex32(info.array_len);
+        trace_text(" hash="); trace_hex32(info.array_hash);
+        trace_text(" wifi_fw_len="); trace_hex32(info.wifi_fw_len);
+        trace_text(" clm_len="); trace_hex32(info.clm_len);
+        trace_text("\n");
+    }
+}
+
+static void cyw43_inventory_report(void) {
+    cyw43_report_blob("wifi", g_cyw43_wifi_fw_path);
+    cyw43_report_blob("bt", g_cyw43_bt_fw_path);
+    cyw43_report_blob("nvram", g_cyw43_nvram_path);
+}
+
+static int cyw43_trace_active(void) {
+    return g_cyw43_model || trace_enabled(TRACE_CYW43);
+}
+
+static int cyw43_pio_fifo_addr(u32 addr) {
+    u32 off;
+    if (addr >= PIO0_BASE && addr < PIO0_BASE + PIO_SIZE) off = addr - PIO0_BASE;
+    else if (addr >= PIO1_BASE && addr < PIO1_BASE + PIO_SIZE) off = addr - PIO1_BASE;
+    else return 0;
+    return (off >= PIO_TXF0_OFF && off <= PIO_TXF3_OFF) || (off >= PIO_RXF0_OFF && off <= PIO_RXF3_OFF);
+}
+
+static void cyw43_trace_pio(const char *kind, u32 addr, u32 value) {
+    u32 pio = addr >= PIO1_BASE ? 1u : 0u;
+    u32 off = addr - (pio != 0u ? PIO1_BASE : PIO0_BASE);
+    if (!trace_enabled(TRACE_CYW43)) return;
+    trace_text("cyw43-"); trace_text(kind);
+    trace_text(" pio="); trace_hex32(pio);
+    trace_text(" off="); trace_hex32(off);
+    trace_text(" value="); trace_hex32(value);
+    trace_text(" pc="); trace_hex32(g_current_pc);
+    trace_text(" cycles="); trace_hex32(g_cycles);
+    trace_text("\n");
+}
+
+static void cyw43_trace_gpio(const char *kind, u32 mask, u32 state) {
+    static const u32 cyw43_mask = (1u << CYW43_PIN_WL_REG_ON) | (1u << CYW43_PIN_WL_DATA) | (1u << CYW43_PIN_WL_CS) | (1u << CYW43_PIN_WL_CLOCK);
+    if ((mask & cyw43_mask) == 0u) return;
+    g_cyw43_gpio_events += 1u;
+    if (!trace_enabled(TRACE_CYW43)) return;
+    trace_text("cyw43-"); trace_text(kind);
+    trace_text(" mask="); trace_hex32(mask & cyw43_mask);
+    trace_text(" state="); trace_hex32(state & cyw43_mask);
+    trace_text(" pc="); trace_hex32(g_current_pc);
+    trace_text(" cycles="); trace_hex32(g_cycles);
+    trace_text("\n");
 }
 
 static void report_lcd_milestones(void) {
@@ -891,6 +1133,19 @@ static void dma_start_channel(int ch) {
     u32 width = data_size == 0u ? 1u : (data_size == 1u ? 2u : 4u);
     u32 limit = count;
     if ((ctrl & DMA_CTRL_EN) == 0u) return;
+    if (cyw43_trace_active() && (cyw43_pio_fifo_addr(read_addr) || cyw43_pio_fifo_addr(write_addr))) {
+        g_cyw43_dma_events += 1u;
+        if (trace_enabled(TRACE_CYW43)) {
+            trace_text("cyw43-dma ch="); trace_hex32((u32)ch);
+            trace_text(" read="); trace_hex32(read_addr);
+            trace_text(" write="); trace_hex32(write_addr);
+            trace_text(" count="); trace_hex32(count);
+            trace_text(" dreq="); trace_hex32(dreq);
+            trace_text(" width="); trace_hex32(width);
+            trace_text(" pc="); trace_hex32(g_current_pc);
+            trace_text("\n");
+        }
+    }
     if (limit > 0x100000u) limit = 0x100000u;
     dma->ctrl_trig |= DMA_CTRL_BUSY;
     while (limit > 0u) {
@@ -968,10 +1223,18 @@ static int pio_read32(u32 addr, u32 *out_value) {
     }
     off = addr - base;
     if (off == PIO_FSTAT_OFF) {
-        *out_value = PIO_FSTAT_RXEMPTY_MASK | PIO_FSTAT_TXEMPTY_MASK;
+        *out_value = g_cyw43_model ? PIO_FSTAT_TXEMPTY_MASK : (PIO_FSTAT_RXEMPTY_MASK | PIO_FSTAT_TXEMPTY_MASK);
+        cyw43_trace_pio("pio-status", addr, *out_value);
+        return 1;
+    }
+    if (g_cyw43_model && off >= PIO_RXF0_OFF && off <= PIO_RXF3_OFF) {
+        *out_value = 0xffffffffu;
+        g_cyw43_pio_rx_words += 1u;
+        cyw43_trace_pio("pio-rx", addr, *out_value);
         return 1;
     }
     *out_value = bank[off >> 2];
+    cyw43_trace_pio("pior", addr, *out_value);
     return 1;
 }
 
@@ -990,6 +1253,8 @@ static int pio_write32(u32 addr, u32 value) {
     }
     off = addr - base;
     bank[off >> 2] = value;
+    if (off >= PIO_TXF0_OFF && off <= PIO_TXF3_OFF) g_cyw43_pio_tx_words += 1u;
+    cyw43_trace_pio(off >= PIO_TXF0_OFF && off <= PIO_TXF3_OFF ? "pio-tx" : "piow", addr, value);
     return 1;
 }
 
@@ -1120,16 +1385,18 @@ static void mmio_write(u32 addr, u32 value, u32 width) {
     if (addr == RESETS_RESET_CLR) { g_resets_reset &= ~(value & RESET_DONE_MASK); trace_mmio("rstw", addr, value); return; }
     if (addr == SIO_GPIO_OUT_SET) {
         g_gpio_out |= value;
+        cyw43_trace_gpio("gpio-set", value, g_gpio_out);
         lcd_gpio_sync();
         return;
     }
     if (addr == SIO_GPIO_OUT_CLR) {
         g_gpio_out &= ~value;
+        cyw43_trace_gpio("gpio-clr", value, g_gpio_out);
         lcd_gpio_sync();
         return;
     }
-    if (addr == SIO_GPIO_OE_SET) { g_gpio_oe |= value; return; }
-    if (addr == SIO_GPIO_OE_CLR) { g_gpio_oe &= ~value; return; }
+    if (addr == SIO_GPIO_OE_SET) { g_gpio_oe |= value; cyw43_trace_gpio("gpio-oe-set", value, g_gpio_oe); return; }
+    if (addr == SIO_GPIO_OE_CLR) { g_gpio_oe &= ~value; cyw43_trace_gpio("gpio-oe-clr", value, g_gpio_oe); return; }
     if (addr == SIO_DIV_UDIVIDEND) { g_sio_div_signed = 0; g_sio_dividend = value; sio_div_update(); return; }
     if (addr == SIO_DIV_UDIVISOR) { g_sio_div_signed = 0; g_sio_divisor = value; sio_div_update(); return; }
     if (addr == SIO_DIV_SDIVIDEND) { g_sio_div_signed = 1; g_sio_dividend = value; sio_div_update(); return; }
@@ -2376,10 +2643,6 @@ __attribute__((used)) int emu_main(int argc, char **argv) {
     const char *trace_path = 0;
     int frames = 1;
     int i;
-    if (argc < 3) {
-        out("usage: bin_emu input.bin output.png|output.gif [key-script|-|@file] [--frames=N] [--gif-fps=N] [--trace[=path]] [--trace-kinds=base,calls,unknown-mmio,xip|all] [--expect-hash=HEX] [--max-steps=N] [--fail-on-budget] [--report-milestones] [--live-terminal] [--flash-state=PATH] [--symbols=MAP]\n");
-        return 1;
-    }
     g_trace_fd = -1;
     g_trace_mask = 0;
     g_expect_hash = 0;
@@ -2387,8 +2650,28 @@ __attribute__((used)) int emu_main(int argc, char **argv) {
     g_fail_on_budget = 0;
     g_report_milestones = 0;
     g_flash_state_path = 0;
+    g_cyw43_wifi_fw_path = 0;
+    g_cyw43_bt_fw_path = 0;
+    g_cyw43_nvram_path = 0;
+    g_cyw43_inventory = 0;
+    g_cyw43_model = 0;
     g_max_steps = 20000000u;
     g_gif_fps = 15;
+    for (i = 1; i < argc; ++i) {
+        if (str_eq(argv[i], "--cyw43-inventory")) g_cyw43_inventory = 1;
+        else if (str_eq(argv[i], "--cyw43-model")) g_cyw43_model = 1;
+        else if (str_starts(argv[i], "--cyw43-wifi-fw=")) g_cyw43_wifi_fw_path = argv[i] + 16;
+        else if (str_starts(argv[i], "--cyw43-bt-fw=")) g_cyw43_bt_fw_path = argv[i] + 14;
+        else if (str_starts(argv[i], "--cyw43-nvram=")) g_cyw43_nvram_path = argv[i] + 14;
+    }
+    if (argc < 3 && !g_cyw43_inventory) {
+        out("usage: bin_emu input.bin output.png|output.gif [key-script|-|@file] [--frames=N] [--gif-fps=N] [--trace[=path]] [--trace-kinds=base,calls,unknown-mmio,xip,cyw43|all] [--expect-hash=HEX] [--max-steps=N] [--fail-on-budget] [--report-milestones] [--live-terminal] [--flash-state=PATH] [--symbols=MAP] [--cyw43-model] [--cyw43-inventory --cyw43-wifi-fw=PATH --cyw43-bt-fw=PATH --cyw43-nvram=PATH]\n");
+        return 1;
+    }
+    if (g_cyw43_inventory && (argc < 3 || argv[1][0] == '-')) {
+        cyw43_inventory_report();
+        return 0;
+    }
     for (i = 3; i < argc; ++i) {
         if (str_starts(argv[i], "--frames=")) {
             if (!parse_dec(argv[i] + 9, &frames)) {
@@ -2434,6 +2717,9 @@ __attribute__((used)) int emu_main(int argc, char **argv) {
             g_flash_state_path = argv[i] + 14;
         } else if (str_starts(argv[i], "--symbols=")) {
             load_symbol_map(argv[i] + 10);
+        } else if (str_eq(argv[i], "--cyw43-inventory") || str_eq(argv[i], "--cyw43-model") ||
+                   str_starts(argv[i], "--cyw43-wifi-fw=") || str_starts(argv[i], "--cyw43-bt-fw=") ||
+                   str_starts(argv[i], "--cyw43-nvram=")) {
         } else {
             key_script = argv[i];
         }
@@ -2446,6 +2732,11 @@ __attribute__((used)) int emu_main(int argc, char **argv) {
             return 1;
         }
         if (g_trace_mask == 0u) g_trace_mask = TRACE_BASE;
+    }
+    if (g_cyw43_inventory) {
+        if (g_trace_fd >= 0 && g_trace_mask == 0u) g_trace_mask = TRACE_CYW43;
+        cyw43_inventory_report();
+        if (argc < 3) return 0;
     }
     if (key_script != 0 && key_script[0] == '@') {
         if (load_key_file(key_script + 1) != 0) {

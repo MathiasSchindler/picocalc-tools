@@ -7,6 +7,7 @@
 #define TRACE_CALLS            (1u << 1)
 #define TRACE_UNKNOWN_MMIO     (1u << 2)
 #define TRACE_XIP              (1u << 3)
+#define TRACE_CYW43            (1u << 4)
 
 int emu_trace_parse_kinds(const char *s, u32 *out_mask);
 void emu_trace_text(EmuState *emu, const char *s);

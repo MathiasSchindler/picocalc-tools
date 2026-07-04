@@ -2,6 +2,8 @@
 
 This project is an experiment in building freestanding, dependency-free, no-libc software for the PicoCalc device. The current hardware target is the RP2040-based PicoCalc, but the code is intended to stay narrow and explicit enough that future PicoCalc variants, such as RP2350-based boards, can be approached without changing the overall direction.
 
+The same SDK-free firmware should remain a reasonable fit for a Raspberry Pi Pico W installed in the PicoCalc because the application CPU is still the RP2040 and the PicoCalc LCD/keyboard path is unchanged. The Pico W wireless device is different in kind from the rest of this project: it uses the on-board Infineon CYW43439 Wi-Fi/Bluetooth combo chip, which the Pico SDK normally drives through the `cyw43` stack plus lwIP/BT stack integration and a proprietary firmware blob loaded for the wireless chip. Wi-Fi/Bluetooth support is therefore an optional Pico W profile: pragmatic builds may use the blob and SDK stack, while the dependency-free no-libc firmware contract remains separate and the emulator focuses first on CYW43 firmware-load and bus-trace observability.
+
 The primary C firmware path deliberately does not use the Pico SDK. Firmware is built as raw PicoCalc SD-bootloader `.bin` images linked at `0x10032000`, with local startup code, direct register access, small support shims, and device-specific LCD/keyboard drivers. The older Pico SDK route remains documented only as historical context for the original porting work; the active SDK-free path is the one exercised by the bare firmware and emulator targets below.
 
 `solve` is the first real use case. The repository contains a local fork of the NewOS solver, trimmed support code for the solver, SDK-free PicoCalc I/O, and a growing RP2040/PicoCalc emulator so development can iterate quickly before copying binaries to the actual device.
@@ -42,6 +44,20 @@ With the Raspberry Pi installer layout used on this machine, that path is:
 ```sh
 export PICO_SDK_PATH=/home/mathias/pico-sdk/pico/pico-sdk
 ```
+
+The optional Pico W wireless bring-up uses that same SDK checkout for CYW43439 resources. The emulator can inventory the Wi-Fi, Bluetooth, and NVRAM headers without copying the proprietary blobs into this repository:
+
+```sh
+make cyw43-blob-inventory
+```
+
+It also has a first CYW43 trace harness for RP2040-side PIO/GPIO/DMA traffic and a deliberately small fake device mode for early host-driver progress:
+
+```sh
+make bin-emu-cyw43-trace-smoke
+```
+
+This is Tier B/Tier C scaffolding: useful for blob-backed Pico W bring-up and protocol capture, not a complete CYW43439 radio emulator.
 
 Two firmware formats are generated:
 

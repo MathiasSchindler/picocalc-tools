@@ -12,6 +12,11 @@ HOST_LINKER_SRC_DIR := src/host/linker
 HOST_SIM_SRC_DIR := src/host/sim
 HOST_TOOLS_SRC_DIR := src/host/tools
 PICOCALC_BARE_SRC_DIR := src/picocalc/bare
+PICO_SDK_PATH ?= /home/mathias/pico-sdk/pico/pico-sdk
+CYW43_FW_DIR ?= $(PICO_SDK_PATH)/lib/cyw43-driver/firmware
+CYW43_WIFI_FW ?= $(CYW43_FW_DIR)/w43439A0_7_95_49_00_combined.h
+CYW43_BT_FW ?= $(CYW43_FW_DIR)/cyw43_btfw_43439.h
+CYW43_NVRAM ?= $(CYW43_FW_DIR)/wifi_nvram_43439.h
 FONT_DIR := $(BUILD_DIR)/font
 FONTGEN := $(FONT_DIR)/gen_picocalc_font
 FONTRENDER_DIR := vendor/newos/fontrender
@@ -185,7 +190,7 @@ BARE_SOLVE_LTO_OBJS := $(BARE_LTO_DIR)/start.o $(BARE_LTO_DIR)/picocalc_lcd_bare
 BARE_CUBE_LTO_OBJS := $(BARE_LTO_DIR)/start.o $(BARE_LTO_DIR)/picocalc_lcd_bare.o $(BARE_LTO_DIR)/picocalc_kbd_bare.o $(BARE_LTO_DIR)/cube.o
 BARE_PICOLINK_BINS := $(BARE_HELLO_PICOLINK_BIN) $(BARE_KEYS_PICOLINK_BIN) $(BARE_SOLVE_FIXED_PICOLINK_BIN) $(BARE_SOLVE_PICOLINK_BIN) $(BARE_SOLVE_CORE_PICOLINK_BIN) $(BARE_SOLVE_CORE_1BPP_PICOLINK_BIN) $(BARE_GRAPHICS_PICOLINK_BIN) $(BARE_CUBE_PICOLINK_BIN) $(BARE_CUBE_LTO_PICOLINK_BIN) $(BARE_BENCHMARK_PICOLINK_BIN) $(BARE_DIAGNOSTICS_PICOLINK_BIN) $(BARE_INTERRUPT_PICOLINK_BIN) $(BARE_DMA_PICOLINK_BIN) $(BARE_THUMB_PICOLINK_BIN) $(BARE_AEABI_DOUBLE_PICOLINK_BIN) $(BARE_VENDOR_STARTUP_PICOLINK_BIN)
 
-.PHONY: all arm-probe bare-aeabi-double-probe bare-aeabi-double-probe-picolink bare-benchmark bare-benchmark-picolink bare-cube bare-cube-lto-picolink bare-cube-picolink bare-diagnostics bare-diagnostics-picolink bare-dma-probe bare-dma-probe-picolink bare-graphics bare-graphics-picolink bare-hello bare-hello-picolink bare-interrupt-probe bare-interrupt-probe-picolink bare-keys bare-keys-picolink bare-picolink-all bare-solve bare-solve-core-1bpp-picolink bare-solve-core-picolink bare-solve-fixed bare-solve-fixed-picolink bare-solve-lto bare-solve-picolink bare-thumb-probe bare-thumb-probe-picolink bare-vendor-startup-probe bare-vendor-startup-probe-picolink bin-emu-aeabi-double-probe bin-emu-aeabi-double-probe-picolink bin-emu-benchmark bin-emu-benchmark-picolink bin-emu-cube bin-emu-cube-gif bin-emu-cube-lto-picolink bin-emu-cube-picolink bin-emu-diagnostics bin-emu-diagnostics-picolink bin-emu-dma-probe bin-emu-dma-probe-picolink bin-emu-graphics bin-emu-graphics-frames bin-emu-graphics-picolink bin-emu-hello bin-emu-hello-picolink bin-emu-hello-trace bin-emu-interrupt-probe bin-emu-interrupt-probe-picolink bin-emu-live-hello bin-emu-live-solve bin-emu-solve bin-emu-solve-core-1bpp-picolink bin-emu-solve-core-picolink bin-emu-solve-fixed-picolink bin-emu-solve-lto bin-emu-solve-picolink bin-emu-thumb-probe bin-emu-thumb-probe-picolink bin-emu-vendor-startup-probe bin-emu-vendor-startup-probe-picolink clean cube-link-compare emu-deterministic-tests emu-replay-manifest-check emu-vendor-probe font-cascadia font-cascadia-1bpp gui-graphics gui-hello gui-solve picolink-regression sim-graphics sim-solve-fixed sim-solve-repl smoke
+.PHONY: all arm-probe bare-aeabi-double-probe bare-aeabi-double-probe-picolink bare-benchmark bare-benchmark-picolink bare-cube bare-cube-lto-picolink bare-cube-picolink bare-diagnostics bare-diagnostics-picolink bare-dma-probe bare-dma-probe-picolink bare-graphics bare-graphics-picolink bare-hello bare-hello-picolink bare-interrupt-probe bare-interrupt-probe-picolink bare-keys bare-keys-picolink bare-picolink-all bare-solve bare-solve-core-1bpp-picolink bare-solve-core-picolink bare-solve-fixed bare-solve-fixed-picolink bare-solve-lto bare-solve-picolink bare-thumb-probe bare-thumb-probe-picolink bare-vendor-startup-probe bare-vendor-startup-probe-picolink bin-emu-aeabi-double-probe bin-emu-aeabi-double-probe-picolink bin-emu-benchmark bin-emu-benchmark-picolink bin-emu-cube bin-emu-cube-gif bin-emu-cube-lto-picolink bin-emu-cube-picolink bin-emu-cyw43-trace-smoke bin-emu-diagnostics bin-emu-diagnostics-picolink bin-emu-dma-probe bin-emu-dma-probe-picolink bin-emu-graphics bin-emu-graphics-frames bin-emu-graphics-picolink bin-emu-hello bin-emu-hello-picolink bin-emu-hello-trace bin-emu-interrupt-probe bin-emu-interrupt-probe-picolink bin-emu-live-hello bin-emu-live-solve bin-emu-solve bin-emu-solve-core-1bpp-picolink bin-emu-solve-core-picolink bin-emu-solve-fixed-picolink bin-emu-solve-lto bin-emu-solve-picolink bin-emu-thumb-probe bin-emu-thumb-probe-picolink bin-emu-vendor-startup-probe bin-emu-vendor-startup-probe-picolink clean cube-link-compare cyw43-blob-inventory emu-deterministic-tests emu-replay-manifest-check emu-vendor-probe font-cascadia font-cascadia-1bpp gui-graphics gui-hello gui-solve picolink-regression sim-graphics sim-solve-fixed sim-solve-repl smoke
 
 all: $(HOST_SOLVE)
 
@@ -350,6 +355,12 @@ bin-emu-vendor-startup-probe: $(BIN_EMU) $(BARE_VENDOR_STARTUP_BIN)
 
 bin-emu-vendor-startup-probe-picolink: $(BIN_EMU) $(BARE_VENDOR_STARTUP_PICOLINK_BIN)
 	$(BIN_EMU) $(BARE_VENDOR_STARTUP_PICOLINK_BIN) $(EMU_DIR)/bare_vendor_startup_probe_picolink.png --symbols=$(BARE_VENDOR_STARTUP_PICOLINK_MAP) --trace=$(EMU_DIR)/bare_vendor_startup_probe_picolink.trace --trace-kinds=base,calls,unknown-mmio --expect-hash=$(EMU_HASH_VENDOR_STARTUP)
+
+cyw43-blob-inventory: $(BIN_EMU)
+	$(BIN_EMU) --cyw43-inventory --cyw43-wifi-fw=$(CYW43_WIFI_FW) --cyw43-bt-fw=$(CYW43_BT_FW) --cyw43-nvram=$(CYW43_NVRAM)
+
+bin-emu-cyw43-trace-smoke: $(BIN_EMU) $(BARE_VENDOR_STARTUP_BIN)
+	$(BIN_EMU) $(BARE_VENDOR_STARTUP_BIN) $(EMU_DIR)/cyw43_trace_smoke.png --trace=$(EMU_DIR)/cyw43_trace_smoke.trace --trace-kinds=cyw43 --cyw43-model --cyw43-wifi-fw=$(CYW43_WIFI_FW) --cyw43-bt-fw=$(CYW43_BT_FW) --cyw43-nvram=$(CYW43_NVRAM)
 
 bin-emu-live-hello: $(BIN_EMU) $(BARE_HELLO_BIN)
 	$(BIN_EMU) $(BARE_HELLO_BIN) $(EMU_DIR)/bare_hello_live.png --live-terminal

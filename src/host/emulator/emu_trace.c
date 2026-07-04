@@ -37,7 +37,8 @@ int emu_trace_parse_kinds(const char *s, u32 *out_mask) {
             else if (token_eq(s + start, len, "calls")) mask |= TRACE_CALLS;
             else if (token_eq(s + start, len, "unknown-mmio")) mask |= TRACE_UNKNOWN_MMIO;
             else if (token_eq(s + start, len, "xip")) mask |= TRACE_XIP;
-            else if (token_eq(s + start, len, "all")) mask |= TRACE_BASE | TRACE_CALLS | TRACE_UNKNOWN_MMIO | TRACE_XIP;
+            else if (token_eq(s + start, len, "cyw43")) mask |= TRACE_CYW43;
+            else if (token_eq(s + start, len, "all")) mask |= TRACE_BASE | TRACE_CALLS | TRACE_UNKNOWN_MMIO | TRACE_XIP | TRACE_CYW43;
             else return 0;
             if (ch == 0) break;
             start = pos + 1u;

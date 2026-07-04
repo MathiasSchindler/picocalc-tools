@@ -180,6 +180,15 @@ typedef struct {
     int gif_fd;
     int gif_fps;
     const char *flash_state_path;
+    const char *cyw43_wifi_fw_path;
+    const char *cyw43_bt_fw_path;
+    const char *cyw43_nvram_path;
+    int cyw43_inventory;
+    int cyw43_model;
+    u32 cyw43_pio_tx_words;
+    u32 cyw43_pio_rx_words;
+    u32 cyw43_dma_events;
+    u32 cyw43_gpio_events;
     u32 current_pc;
     int frame_index;
     int target_frames;

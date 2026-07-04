@@ -127,6 +127,14 @@ Validated firmware paths:
 | Audio | Not yet implemented | No speaker, PWM audio, I2S, or audio output path is modeled. |
 | SD card filesystem/media emulation | Not yet implemented | The emulator loads one host `.bin` file. It does not emulate SD card block I/O, FAT filesystems, or firmware file selection. |
 
+## Pico W Wireless Hardware Note
+
+Replacing the PicoCalc's Raspberry Pi Pico with a Raspberry Pi Pico W keeps the application CPU in the RP2040 family, so the current SDK-free LCD, keyboard, startup, linker, and emulator work remains relevant for non-wireless firmware. The new hardware surface is the Pico W's Infineon CYW43439 Wi-Fi/Bluetooth combo chip. Local vendor PicoMite sources already show a Pico W web build path through `PICO_BOARD pico_w`, `pico/cyw43_arch.h`, lwIP, and `cyw43` APIs.
+
+Wireless support is accepted as an optional Pico W profile, separate from the current dependency-free firmware contract. The pragmatic Tier B path is to use the Pico SDK `cyw43` driver, lwIP/BT stack pieces, and the proprietary CYW43439 Wi-Fi/Bluetooth firmware blob to make useful wireless tools work first. The Tier C research path is to keep the host/device boundary observable enough that pieces can later be replaced: inventory the firmware blobs, trace CYW43 PIO/SPI bus traffic, document firmware-load and mailbox/control protocols, and isolate PicoCalc application code from the SDK wireless stack behind a small project-owned API.
+
+The local Pico SDK checkout already contains the relevant artifacts under `/home/mathias/pico-sdk/pico/pico-sdk/lib/cyw43-driver/firmware`, including `w43439A0_7_95_49_00_combined.h`, `wb43439A0_7_95_49_00_combined.h`, `cyw43_btfw_43439.h`, and `wifi_nvram_43439.h`. The emulator can be wired to load and report these blobs as opaque CYW43439-side firmware resources and to trace the RP2040 host driver traffic that uploads/uses them. It should not be described as executing the blob: that firmware runs on the CYW43439's internal cores, not on the emulated RP2040. Full Wi-Fi/Bluetooth emulation would require a CYW43439 device model, while the useful near-term milestone is a CYW43 firmware-load/bus trace harness.
+
 ## Practical Next Priorities
 
 | Priority | Feature | Status | Explanation |
@@ -143,6 +151,8 @@ Validated firmware paths:
 | 10 | Collect real PicoCalc reference screens | Next | Use real hardware runs of the six `vendor/images/*.bin` files to capture first-screen photos, time to first update, keyboard response, and companion-file requirements for emulator targets. |
 | 11 | Emulator profiling and syscall-style tracing | Next | Add a built-in profiler/trace mode that can report hot PCs, hot basic blocks or helper paths, MMIO/syscall-like transaction counts, and time spent in recognized busy-wait patterns. The first useful target is a deterministic text report that identifies where vendor images spend their 2M-step budget so speed work and wait-loop acceleration are guided by measurements rather than trace inspection. |
 | 12 | Refactor large emulator implementation | Next | Split the growing `bin_emu.c` into focused modules while preserving the no-libc host build: CPU/Thumb decode, memory map, Boot ROM helpers, RP2040 peripherals, LCD/output writers, tracing/profiling, and command-line/run-loop glue. Keep each extraction covered by `make emu-deterministic-tests` so refactoring does not change emulator behavior. |
+| 13 | Pico W wireless profile | Next | Add an optional Tier B Pico W profile that accepts the Pico SDK `cyw43`/lwIP/BT dependency and proprietary CYW43439 firmware blob so wireless tools can work on real hardware. Keep it separate from the no-libc firmware contract, and expose a small project-owned wireless API so future Tier C replacement work can target the host/device boundary instead of application code. |
+| 14 | CYW43 emulator trace harness | In progress | Added `make cyw43-blob-inventory`, `--trace-kinds=cyw43`, CYW43 blob/NVRAM inventory from the local Pico SDK path, optional CYW43 PIO/GPIO/DMA trace hooks, and a minimal `--cyw43-model` placeholder that reports PIO RX readiness and idle words. The next step is to run a real Pico W `cyw43_arch_init` app image through this harness and expand fake responses based on the captured firmware-load/mailbox traffic. |
 
 ## Hardware Experiment Ideas
 

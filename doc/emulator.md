@@ -11,11 +11,14 @@ build/emu/bin_emu INPUT.bin OUTPUT.png [KEYS]
 build/emu/bin_emu INPUT.bin OUTPUT.gif [KEYS] --frames=N --gif-fps=N
 build/emu/bin_emu INPUT.bin OUTPUT.png [KEYS] --trace[=PATH]
 build/emu/bin_emu INPUT.bin OUTPUT.png [KEYS] --symbols=MAP
+build/emu/bin_emu --cyw43-inventory --cyw43-wifi-fw=PATH --cyw43-bt-fw=PATH --cyw43-nvram=PATH
 
 make bin-emu-cube
 make bin-emu-cube-picolink
 make bin-emu-cube-gif
 make bin-emu-aeabi-double-probe
+make cyw43-blob-inventory
+make bin-emu-cyw43-trace-smoke
 make picolink-regression
 ```
 
@@ -39,6 +42,7 @@ The emulator is a no-libc Linux host program. It uses `_start`, direct syscalls,
 - writes looping GIF captures when the output path ends in `.gif` and frame capture is requested
 - supports scripted keyboard input from an argument, stdin, or an `@file` replay
 - supports trace output for base execution events, Boot ROM calls, unknown MMIO, and XIP SSI MMIO
+- supports optional CYW43 blob inventory and RP2040-side Pico W PIO/GPIO/DMA trace hooks for wireless bring-up
 - supports `pico_link` map files for symbol names in human-facing PC reports
 - supports persistent flash-state files for Boot ROM flash erase/program experiments
 - supports deterministic hash checks for regression tests
@@ -62,7 +66,7 @@ Vendor images under `vendor/images` are also used as compatibility probes. They 
 - `--gif-fps=N` set GIF playback rate from `1` to `100` frames per second
 - `--trace` write a default trace file beside the normal output path
 - `--trace=PATH` write trace output to `PATH`
-- `--trace-kinds=base,calls,unknown-mmio,xip|all` choose trace categories
+- `--trace-kinds=base,calls,unknown-mmio,xip,cyw43|all` choose trace categories
 - `--expect-hash=HEX` fail if the final output framebuffer hash differs from `HEX`
 - `--max-steps=N` stop after at most `N` emulated instructions or accelerated-step equivalents
 - `--fail-on-budget` return failure when the step budget is reached
@@ -70,8 +74,13 @@ Vendor images under `vendor/images` are also used as compatibility probes. They 
 - `--live-terminal` use live terminal keyboard input; if no key script is provided, stdin is used
 - `--flash-state=PATH` load and save persistent emulated flash contents at `PATH`
 - `--symbols=MAP` read a `pico_link` map file and annotate PCs in frame-ready, budget, crash, and LCD-milestone reports
+- `--cyw43-inventory` scan CYW43439 firmware/NVRAM headers and print byte counts, FNV-1a hashes, and Wi-Fi/CLM split lengths when present
+- `--cyw43-wifi-fw=PATH`, `--cyw43-bt-fw=PATH`, and `--cyw43-nvram=PATH` provide the Pico SDK CYW43439 resource headers for inventory or trace runs
+- `--cyw43-model` enables the current minimal CYW43-side placeholder: PIO RX FIFO reads return idle words and PIO FIFO status reports receive data available, so host-side bring-up can move past the first empty-FIFO frontier while traffic is traced
 
 `pico_link` maps include synthetic PicoCalc startup symbols such as `__data_source`, `__bss_start`, and `__StackTop`. `make picolink-regression` checks those map entries before running the emulator hash tests.
+
+The CYW43 support is a trace harness, not a Wi-Fi/Bluetooth radio emulator. The firmware blobs are treated as opaque CYW43439-side resources, and `--cyw43-model` only provides enough fake PIO-side readiness/data behavior to expose the RP2040 host driver's firmware-load and mailbox/control traffic.
 
 ## EXAMPLES
 
@@ -97,6 +106,18 @@ Run the local ARM EABI double conversion, comparison, and arithmetic helper prob
 
 ```
 make bin-emu-aeabi-double-probe
+```
+
+Inventory the local Pico SDK CYW43439 resources:
+
+```
+make cyw43-blob-inventory
+```
+
+Smoke-test the CYW43 trace hooks with the existing PIO startup probe:
+
+```
+make bin-emu-cyw43-trace-smoke
 ```
 
 Run the optional feature-sliced PicoCalc solve image:
