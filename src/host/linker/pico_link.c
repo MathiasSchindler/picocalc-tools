@@ -147,6 +147,7 @@ static int g_relocation_abs32_count;
 static int g_relocation_rel32_count;
 static int g_relocation_thm_call_count;
 static int g_archive_member_count;
+static u32 g_app_base = APP_BASE;
 static int g_gc_sections = 1;
 static int g_print_stats;
 static int g_order_by_reach;
@@ -237,6 +238,31 @@ static u32 parse_archive_decimal(const char *text, usize count) {
     while (index < count && text[index] == ' ') index += 1u;
     if (!any || index != count) fail_text("bad archive decimal field");
     return value;
+}
+
+static int parse_u32_arg(const char *text, u32 *out_value) {
+    u32 value = 0;
+    usize index = 0;
+    int base = 10;
+    int any = 0;
+    if (text[0] == '0' && (text[1] == 'x' || text[1] == 'X')) {
+        base = 16;
+        index = 2u;
+    }
+    while (text[index] != 0) {
+        u32 digit;
+        char c = text[index++];
+        if (c >= '0' && c <= '9') digit = (u32)(c - '0');
+        else if (base == 16 && c >= 'a' && c <= 'f') digit = (u32)(c - 'a' + 10);
+        else if (base == 16 && c >= 'A' && c <= 'F') digit = (u32)(c - 'A' + 10);
+        else return 0;
+        if (digit >= (u32)base) return 0;
+        value = value * (u32)base + digit;
+        any = 1;
+    }
+    if (!any) return 0;
+    *out_value = value;
+    return 1;
 }
 
 static usize archive_member_name_len(const char *name) {
@@ -611,7 +637,7 @@ static u32 layout_flash_sections(SectionKind kind, u32 cursor) {
         cursor = align_up(cursor, alignment);
         input_section->vma = cursor;
         input_section->lma = cursor;
-        input_section->output_offset = cursor - APP_BASE;
+        input_section->output_offset = cursor - g_app_base;
         copy_section_bytes(input_section);
         cursor += input_section->header->sh_size;
         placed = 1;
@@ -639,7 +665,7 @@ static void layout_data_sections(u32 *ram_cursor, u32 *flash_cursor) {
         *flash_cursor = align_up(*flash_cursor, alignment);
         input_section->vma = *ram_cursor;
         input_section->lma = *flash_cursor;
-        input_section->output_offset = *flash_cursor - APP_BASE;
+        input_section->output_offset = *flash_cursor - g_app_base;
         copy_section_bytes(input_section);
         *ram_cursor += input_section->header->sh_size;
         *flash_cursor += input_section->header->sh_size;
@@ -671,7 +697,7 @@ static void layout_bss_sections(u32 *ram_cursor) {
 }
 
 static void layout_sections(void) {
-    u32 flash_cursor = APP_BASE;
+    u32 flash_cursor = g_app_base;
     u32 ram_cursor = RAM_BASE;
     g_text_start = flash_cursor;
     flash_cursor = layout_flash_sections(SEC_VECTORS, flash_cursor);
@@ -681,18 +707,32 @@ static void layout_sections(void) {
     g_text_end = flash_cursor;
     layout_data_sections(&ram_cursor, &flash_cursor);
     layout_bss_sections(&ram_cursor);
-    g_output_size = flash_cursor - APP_BASE;
+    g_output_size = flash_cursor - g_app_base;
     if (g_output_size > MAX_OUTPUT_SIZE) fail_text("output image too large");
 }
 
 static int special_symbol_value(const char *name, u32 *out_value) {
     if (name_is(name, "__text_start")) { *out_value = g_text_start; return 1; }
     if (name_is(name, "__text_end")) { *out_value = g_text_end; return 1; }
+    if (name_is(name, "__etext")) { *out_value = g_text_end; return 1; }
+    if (name_is(name, "__flash_binary_end")) { *out_value = g_text_end; return 1; }
     if (name_is(name, "__data_source")) { *out_value = g_data_source; return 1; }
     if (name_is(name, "__data_start")) { *out_value = g_data_start; return 1; }
+    if (name_is(name, "__data_start__")) { *out_value = g_data_start; return 1; }
     if (name_is(name, "__data_end")) { *out_value = g_data_end; return 1; }
+    if (name_is(name, "__data_end__")) { *out_value = g_data_end; return 1; }
     if (name_is(name, "__bss_start")) { *out_value = g_bss_start; return 1; }
+    if (name_is(name, "__bss_start__")) { *out_value = g_bss_start; return 1; }
     if (name_is(name, "__bss_end")) { *out_value = g_bss_end; return 1; }
+    if (name_is(name, "__bss_end__")) { *out_value = g_bss_end; return 1; }
+    if (name_is(name, "end")) { *out_value = g_bss_end; return 1; }
+    if (name_is(name, "__preinit_array_start") || name_is(name, "__preinit_array_end")) { *out_value = g_text_end; return 1; }
+    if (name_is(name, "__init_array_start") || name_is(name, "__init_array_end")) { *out_value = g_text_end; return 1; }
+    if (name_is(name, "__mutex_array_start") || name_is(name, "__mutex_array_end")) { *out_value = g_text_end; return 1; }
+    if (name_is(name, "__binary_info_start") || name_is(name, "__binary_info_end")) { *out_value = g_text_end; return 1; }
+    if (name_is(name, "__scratch_x_source__") || name_is(name, "__scratch_x_start__") || name_is(name, "__scratch_x_end__")) { *out_value = g_text_end; return 1; }
+    if (name_is(name, "__scratch_y_source__") || name_is(name, "__scratch_y_start__") || name_is(name, "__scratch_y_end__")) { *out_value = g_text_end; return 1; }
+    if (name_is(name, "__StackLimit")) { *out_value = RAM_BASE; return 1; }
     if (name_is(name, "__StackTop") || name_is(name, "__stack")) { *out_value = STACK_TOP; return 1; }
     return 0;
 }
@@ -1032,7 +1072,7 @@ static void print_stats(void) {
 }
 
 static void usage(void) {
-    out("usage: pico_link [-v] [--stats] [--map=path] [--no-gc-sections] [--order=reach] -o output.bin input.o...\n");
+    out("usage: pico_link [-v] [--stats] [--map=path] [--app-base=addr] [--no-gc-sections] [--order=reach] -o output.bin input.o...\n");
 }
 
 __attribute__((used)) int linker_main(int argc, char **argv) {
@@ -1055,6 +1095,13 @@ __attribute__((used)) int linker_main(int argc, char **argv) {
             g_map_path = argv[arg_index++];
         } else if (str_eq(argv[arg_index], "--no-gc-sections")) {
             g_gc_sections = 0;
+            arg_index += 1;
+        } else if (str_starts(argv[arg_index], "--app-base=")) {
+            if (!parse_u32_arg(argv[arg_index] + 11, &g_app_base)) { usage(); return 1; }
+            arg_index += 1;
+        } else if (str_eq(argv[arg_index], "--app-base")) {
+            arg_index += 1;
+            if (arg_index >= argc || !parse_u32_arg(argv[arg_index], &g_app_base)) { usage(); return 1; }
             arg_index += 1;
         } else if (str_eq(argv[arg_index], "--order=reach")) {
             g_order_by_reach = 1;

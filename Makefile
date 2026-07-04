@@ -4,11 +4,19 @@ LDFLAGS ?= -nostdlib -no-pie
 LDLIBS ?= -lgcc
 
 BUILD_DIR := build
-PICOW_BUILD_DIR ?= build-picow
-PICOW_WIFI_DIAG_MENU_UF2 := $(PICOW_BUILD_DIR)/picow_wifi_diag_menu.uf2
-SDK_HELLO_BUILD_DIR ?= build-sdk-hello
+PICOW_BUILD_DIR ?= $(BUILD_DIR)/picow
+SDK_HELLO_BUILD_DIR ?= $(BUILD_DIR)/sdk-hello
+PICOW_WIFI_DIAG_FLASH_BIN := $(PICOW_BUILD_DIR)/picow_wifi_diag_flash.bin
+PICOW_WIFI_DIAG_FLASH_UF2 := $(PICOW_BUILD_DIR)/picow_wifi_diag_flash.uf2
 SDK_HELLO_BIN := $(SDK_HELLO_BUILD_DIR)/picocalc_hello_flash.bin
 SDK_HELLO_UF2 := $(SDK_HELLO_BUILD_DIR)/picocalc_hello_flash.uf2
+SDK_HELLO_PICOLINK_OBJECTS := $(SDK_HELLO_BUILD_DIR)/picocalc_hello_sdk_picolink_objects.rsp
+SDK_HELLO_PICOLINK_RELOC := $(SDK_HELLO_BUILD_DIR)/picocalc_hello_sdk_picolink_reloc.o
+SDK_HELLO_PICOLINK_RELOC_STRIPPED := $(SDK_HELLO_BUILD_DIR)/picocalc_hello_sdk_picolink_reloc_stripped.o
+SDK_HELLO_PICOLINK_BIN := $(SDK_HELLO_BUILD_DIR)/picocalc_hello_sdk_picolink.bin
+SDK_HELLO_PICOLINK_MAP := $(SDK_HELLO_BUILD_DIR)/picocalc_hello_sdk_picolink.map
+SDK_HELLO_PICOLINK_FLASH_BIN := $(SDK_HELLO_BUILD_DIR)/picocalc_hello_sdk_picolink_flash.bin
+SDK_HELLO_PICOLINK_FLASH_MAP := $(SDK_HELLO_BUILD_DIR)/picocalc_hello_sdk_picolink_flash.map
 HOST_SOLVE := $(BUILD_DIR)/solve-host
 HOST_OBJS := $(BUILD_DIR)/solve.o $(BUILD_DIR)/support.o $(BUILD_DIR)/platform_linux_x86_64.o
 HOST_SOLVE_SRC_DIR := src/host/solve
@@ -17,6 +25,7 @@ HOST_LINKER_SRC_DIR := src/host/linker
 HOST_SIM_SRC_DIR := src/host/sim
 HOST_TOOLS_SRC_DIR := src/host/tools
 PICOCALC_BARE_SRC_DIR := src/picocalc/bare
+PICOCALC_SDK_SRC_DIR := src/picocalc/sdk
 PICO_SDK_PATH ?= /home/mathias/pico-sdk/pico/pico-sdk
 CYW43_FW_DIR ?= $(PICO_SDK_PATH)/lib/cyw43-driver/firmware
 CYW43_WIFI_FW ?= $(CYW43_FW_DIR)/w43439A0_7_95_49_00_combined.h
@@ -27,6 +36,7 @@ FONTGEN := $(FONT_DIR)/gen_picocalc_font
 TOOLS_DIR := $(BUILD_DIR)/tools
 BIN2UF2 := $(TOOLS_DIR)/bin2uf2
 PICOCALC_APP_FLASH_BASE ?= 0x10032000
+PICOCALC_FLASH_APP_BASE ?= 0x10000100
 PICOCALC_BOOT2_UF2 ?= vendor/PicoCalc/Bin/PicoCalc SD/pico1-apps/PicoCalc_Fuzix_v1.0.uf2
 RP2040_UF2_FAMILY_ID ?= 0xe48bff56
 FONTRENDER_DIR := vendor/newos/fontrender
@@ -41,7 +51,8 @@ FONTGEN_1BPP_PREVIEW := $(FONT1_DIR)/picocalc_cascadia_8x14.ppm
 EMU_DIR := $(BUILD_DIR)/emu
 BIN_EMU := $(EMU_DIR)/bin_emu
 EMU_SOLVE_REPLAY := tests/solve_replay.keys
-EMU_HASH_HELLO := 0x8ff880ad
+EMU_HASH_HELLO := 0xe45c02b4
+EMU_HASH_HELLO_PICOLINK := 0x24ad66ed
 EMU_HASH_GRAPHICS := 0x401ffcba
 EMU_HASH_SOLVE_FIXED_PICOLINK := 0xdff8bb8d
 EMU_HASH_SOLVE := 0x34c38b9e
@@ -93,15 +104,22 @@ BARE_CC ?= arm-none-eabi-gcc
 BARE_OBJCOPY ?= arm-none-eabi-objcopy
 BARE_AR ?= arm-none-eabi-ar
 BARE_SIZE ?= arm-none-eabi-size
+BARE_STRIP ?= arm-none-eabi-strip
 BARE_DIR := $(BUILD_DIR)/bare
 BARE_HELLO_ELF := $(BARE_DIR)/bare_hello.elf
 BARE_HELLO_BIN := $(BARE_DIR)/bare_hello.bin
+BARE_HELLO_FLASH_ELF := $(BARE_DIR)/bare_hello_flash.elf
+BARE_HELLO_FLASH_BIN := $(BARE_DIR)/bare_hello_flash.bin
 BARE_HELLO_PICOLINK_BIN := $(BARE_DIR)/bare_hello_picolink.bin
 BARE_HELLO_PICOLINK_MAP := $(BARE_DIR)/bare_hello_picolink.map
+BARE_HELLO_FLASH_PICOLINK_BIN := $(BARE_DIR)/bare_hello_flash_picolink.bin
+BARE_HELLO_FLASH_PICOLINK_MAP := $(BARE_DIR)/bare_hello_flash_picolink.map
 BARE_KEYS_ELF := $(BARE_DIR)/bare_keys.elf
 BARE_KEYS_BIN := $(BARE_DIR)/bare_keys.bin
 BARE_KEYS_PICOLINK_BIN := $(BARE_DIR)/bare_keys_picolink.bin
 BARE_KEYS_PICOLINK_MAP := $(BARE_DIR)/bare_keys_picolink.map
+BARE_KEYS_FLASH_PICOLINK_BIN := $(BARE_DIR)/bare_keys_flash_picolink.bin
+BARE_KEYS_FLASH_PICOLINK_MAP := $(BARE_DIR)/bare_keys_flash_picolink.map
 BARE_SOLVE_FIXED_ELF := $(BARE_DIR)/bare_solve_fixed.elf
 BARE_SOLVE_FIXED_BIN := $(BARE_DIR)/bare_solve_fixed.bin
 BARE_SOLVE_FIXED_PICOLINK_BIN := $(BARE_DIR)/bare_solve_fixed_picolink.bin
@@ -111,6 +129,8 @@ BARE_SOLVE_BIN := $(BARE_DIR)/bare_solve.bin
 BARE_SOLVE_PICOLINK_RELOC := $(BARE_DIR)/bare_solve_picolink_reloc.o
 BARE_SOLVE_PICOLINK_BIN := $(BARE_DIR)/bare_solve_picolink.bin
 BARE_SOLVE_PICOLINK_MAP := $(BARE_DIR)/bare_solve_picolink.map
+BARE_SOLVE_FLASH_PICOLINK_BIN := $(BARE_DIR)/bare_solve_flash_picolink.bin
+BARE_SOLVE_FLASH_PICOLINK_MAP := $(BARE_DIR)/bare_solve_flash_picolink.map
 BARE_SOLVE_CORE_PICOLINK_BIN := $(BARE_DIR)/bare_solve_core_picolink.bin
 BARE_SOLVE_CORE_PICOLINK_MAP := $(BARE_DIR)/bare_solve_core_picolink.map
 BARE_1BPP_DIR := $(BUILD_DIR)/bare-1bpp
@@ -120,19 +140,27 @@ BARE_GRAPHICS_ELF := $(BARE_DIR)/bare_graphics.elf
 BARE_GRAPHICS_BIN := $(BARE_DIR)/bare_graphics.bin
 BARE_GRAPHICS_PICOLINK_BIN := $(BARE_DIR)/bare_graphics_picolink.bin
 BARE_GRAPHICS_PICOLINK_MAP := $(BARE_DIR)/bare_graphics_picolink.map
+BARE_GRAPHICS_FLASH_PICOLINK_BIN := $(BARE_DIR)/bare_graphics_flash_picolink.bin
+BARE_GRAPHICS_FLASH_PICOLINK_MAP := $(BARE_DIR)/bare_graphics_flash_picolink.map
 BARE_CUBE_ELF := $(BARE_DIR)/bare_cube.elf
 BARE_CUBE_BIN := $(BARE_DIR)/bare_cube.bin
 BARE_CUBE_PICOLINK_BIN := $(BARE_DIR)/bare_cube_picolink.bin
 BARE_CUBE_PICOLINK_MAP := $(BARE_DIR)/bare_cube_picolink.map
+BARE_CUBE_FLASH_PICOLINK_BIN := $(BARE_DIR)/bare_cube_flash_picolink.bin
+BARE_CUBE_FLASH_PICOLINK_MAP := $(BARE_DIR)/bare_cube_flash_picolink.map
 BARE_RUNTIME_ARCHIVE := $(BARE_DIR)/libpico_runtime.a
 BARE_BENCHMARK_ELF := $(BARE_DIR)/bare_benchmark.elf
 BARE_BENCHMARK_BIN := $(BARE_DIR)/bare_benchmark.bin
 BARE_BENCHMARK_PICOLINK_BIN := $(BARE_DIR)/bare_benchmark_picolink.bin
 BARE_BENCHMARK_PICOLINK_MAP := $(BARE_DIR)/bare_benchmark_picolink.map
+BARE_BENCHMARK_FLASH_PICOLINK_BIN := $(BARE_DIR)/bare_benchmark_flash_picolink.bin
+BARE_BENCHMARK_FLASH_PICOLINK_MAP := $(BARE_DIR)/bare_benchmark_flash_picolink.map
 BARE_DIAGNOSTICS_ELF := $(BARE_DIR)/bare_diagnostics.elf
 BARE_DIAGNOSTICS_BIN := $(BARE_DIR)/bare_diagnostics.bin
 BARE_DIAGNOSTICS_PICOLINK_BIN := $(BARE_DIR)/bare_diagnostics_picolink.bin
 BARE_DIAGNOSTICS_PICOLINK_MAP := $(BARE_DIR)/bare_diagnostics_picolink.map
+BARE_DIAGNOSTICS_FLASH_PICOLINK_BIN := $(BARE_DIR)/bare_diagnostics_flash_picolink.bin
+BARE_DIAGNOSTICS_FLASH_PICOLINK_MAP := $(BARE_DIR)/bare_diagnostics_flash_picolink.map
 BARE_INTERRUPT_ELF := $(BARE_DIR)/bare_interrupt_probe.elf
 BARE_INTERRUPT_BIN := $(BARE_DIR)/bare_interrupt_probe.bin
 BARE_INTERRUPT_PICOLINK_BIN := $(BARE_DIR)/bare_interrupt_probe_picolink.bin
@@ -155,6 +183,7 @@ BARE_VENDOR_STARTUP_PICOLINK_BIN := $(BARE_DIR)/bare_vendor_startup_probe_picoli
 BARE_VENDOR_STARTUP_PICOLINK_MAP := $(BARE_DIR)/bare_vendor_startup_probe_picolink.map
 BARE_CFLAGS ?= -std=c11 -Wall -Wextra -Os -ffreestanding -fno-builtin -fno-stack-protector -ffunction-sections -fdata-sections -DSOLVE_NO_STYLED_OUTPUT -mcpu=cortex-m0plus -mthumb -I$(PICOCALC_BARE_SRC_DIR) -Isrc -I$(FONT_DIR)
 BARE_LDFLAGS ?= -nostdlib -Wl,--gc-sections -T$(PICOCALC_BARE_SRC_DIR)/memmap_sd_rp2040.ld
+BARE_FLASH_LDFLAGS ?= -nostdlib -Wl,--gc-sections -T$(PICOCALC_BARE_SRC_DIR)/memmap_flash_rp2040.ld
 BARE_LDLIBS ?= -lgcc
 BARE_RELOC_LDFLAGS ?= -r -nostdlib -mcpu=cortex-m0plus -mthumb
 BARE_LTO_DIR := $(BUILD_DIR)/bare-lto
@@ -168,7 +197,7 @@ BARE_CUBE_LTO_RELOC := $(BARE_LTO_DIR)/bare_cube_lto_reloc.o
 BARE_CUBE_LTO_PICOLINK_BIN := $(BARE_LTO_DIR)/bare_cube_lto_picolink.bin
 BARE_CUBE_LTO_PICOLINK_MAP := $(BARE_LTO_DIR)/bare_cube_lto_picolink.map
 BARE_HELLO_OBJS := $(BARE_DIR)/start.o $(BARE_DIR)/picocalc_lcd_bare.o $(BARE_DIR)/hello.o
-BARE_HELLO_PICOLINK_OBJS := $(BARE_HELLO_OBJS) $(BARE_RUNTIME_ARCHIVE)
+BARE_HELLO_PICOLINK_OBJS := $(BARE_DIR)/start.o $(BARE_DIR)/picocalc_lcd_bare.o $(BARE_DIR)/hello_picolink.o $(BARE_RUNTIME_ARCHIVE)
 BARE_KEYS_OBJS := $(BARE_DIR)/start.o $(BARE_DIR)/picocalc_lcd_bare.o $(BARE_DIR)/picocalc_kbd_bare.o $(BARE_DIR)/keys.o
 BARE_KEYS_PICOLINK_OBJS := $(BARE_KEYS_OBJS) $(BARE_RUNTIME_ARCHIVE)
 BARE_SOLVE_FIXED_OBJS := $(BARE_DIR)/start.o $(BARE_DIR)/picocalc_lcd_bare.o $(BARE_DIR)/solve_fixed.o $(BARE_DIR)/solve.o $(BARE_DIR)/support.o
@@ -205,15 +234,31 @@ BARE_APP_BINS := $(BARE_PRIMARY_BINS) $(BARE_PICOLINK_BINS)
 BARE_UF2_DIR := $(BUILD_DIR)/uf2
 BARE_UF2_MENU_DIR := $(BARE_UF2_DIR)/menu
 BARE_UF2_VARIANTS_DIR := $(BARE_UF2_DIR)/variants
+PICOW_WIFI_DIAG_UF2 := $(BARE_UF2_DIR)/wifi_diag.uf2
+PICOW_WIFI_DIAG_MENU_UF2 := $(PICOW_WIFI_DIAG_UF2)
+HELLO_MATRIX_UF2_DIR := $(BARE_UF2_DIR)/hello-matrix
+HELLO_MATRIX_SDK_GNU_UF2 := $(HELLO_MATRIX_UF2_DIR)/hello_sdk_gnu.uf2
+HELLO_MATRIX_SDK_PICOLINK_UF2 := $(HELLO_MATRIX_UF2_DIR)/hello_sdk_picolink.uf2
+HELLO_MATRIX_NOSDK_GNU_UF2 := $(HELLO_MATRIX_UF2_DIR)/hello_nosdk_gnu.uf2
+HELLO_MATRIX_NOSDK_PICOLINK_UF2 := $(HELLO_MATRIX_UF2_DIR)/hello_nosdk_picolink.uf2
+HELLO_SMALL_UF2_DIR := $(BARE_UF2_DIR)/hello-small
+HELLO_SMALL_SDK_GNU_UF2 := $(HELLO_SMALL_UF2_DIR)/hello_sdk_gnu.uf2
+HELLO_SMALL_SDK_PICOLINK_UF2 := $(HELLO_SMALL_UF2_DIR)/hello_sdk_picolink.uf2
+HELLO_SMALL_NOSDK_GNU_UF2 := $(HELLO_SMALL_UF2_DIR)/hello_nosdk_gnu.uf2
+HELLO_SMALL_NOSDK_PICOLINK_UF2 := $(HELLO_SMALL_UF2_DIR)/hello_nosdk_picolink.uf2
 BARE_MENU_BINS := $(BARE_HELLO_BIN) $(BARE_KEYS_BIN) $(BARE_SOLVE_BIN) $(BARE_GRAPHICS_BIN) $(BARE_CUBE_BIN) $(BARE_BENCHMARK_BIN) $(BARE_DIAGNOSTICS_BIN)
 BARE_VARIANT_BINS := $(filter-out $(BARE_MENU_BINS),$(BARE_APP_BINS))
 BARE_MENU_UF2S := $(addprefix $(BARE_UF2_MENU_DIR)/,$(notdir $(BARE_MENU_BINS:.bin=.uf2)))
 BARE_VARIANT_UF2S := $(addprefix $(BARE_UF2_VARIANTS_DIR)/,$(notdir $(BARE_VARIANT_BINS:.bin=.uf2)))
 BARE_UF2S := $(BARE_MENU_UF2S) $(BARE_VARIANT_UF2S)
+PICOCALC_DELIVERABLE_UF2S := $(BARE_UF2_DIR)/hello.uf2 $(BARE_UF2_DIR)/keys.uf2 $(BARE_UF2_DIR)/solve.uf2 $(BARE_UF2_DIR)/graphics.uf2 $(BARE_UF2_DIR)/cube.uf2 $(BARE_UF2_DIR)/benchmark.uf2 $(BARE_UF2_DIR)/diagnostics.uf2 $(PICOW_WIFI_DIAG_UF2)
+PICOCALC_DELIVERABLE_UF2_NAMES := $(notdir $(PICOCALC_DELIVERABLE_UF2S))
 
-.PHONY: all arm-probe bare-aeabi-double-probe bare-aeabi-double-probe-picolink bare-benchmark bare-benchmark-picolink bare-cube bare-cube-lto-picolink bare-cube-picolink bare-diagnostics bare-diagnostics-picolink bare-dma-probe bare-dma-probe-picolink bare-graphics bare-graphics-picolink bare-hello bare-hello-picolink bare-interrupt-probe bare-interrupt-probe-picolink bare-keys bare-keys-picolink bare-picolink-all bare-solve bare-solve-core-1bpp-picolink bare-solve-core-picolink bare-solve-fixed bare-solve-fixed-picolink bare-solve-lto bare-solve-picolink bare-thumb-probe bare-thumb-probe-picolink bare-uf2-all bare-uf2-menu bare-uf2-variants bare-vendor-startup-probe bare-vendor-startup-probe-picolink bin-emu-aeabi-double-probe bin-emu-aeabi-double-probe-picolink bin-emu-benchmark bin-emu-benchmark-picolink bin-emu-cube bin-emu-cube-gif bin-emu-cube-lto-picolink bin-emu-cube-picolink bin-emu-cyw43-trace-smoke bin-emu-diagnostics bin-emu-diagnostics-picolink bin-emu-dma-probe bin-emu-dma-probe-picolink bin-emu-graphics bin-emu-graphics-frames bin-emu-graphics-picolink bin-emu-hello bin-emu-hello-picolink bin-emu-hello-trace bin-emu-interrupt-probe bin-emu-interrupt-probe-picolink bin-emu-live-hello bin-emu-live-solve bin-emu-picow-wifi-diag bin-emu-sdk-hello bin-emu-solve bin-emu-solve-core-1bpp-picolink bin-emu-solve-core-picolink bin-emu-solve-fixed-picolink bin-emu-solve-lto bin-emu-solve-picolink bin-emu-thumb-probe bin-emu-thumb-probe-picolink bin-emu-vendor-startup-probe bin-emu-vendor-startup-probe-picolink clean cube-link-compare cyw43-blob-inventory emu-deterministic-tests emu-replay-manifest-check emu-vendor-probe font-cascadia font-cascadia-1bpp gui-graphics gui-hello gui-solve picolink-regression picow-wifi-diag sdk-hello-uf2 sim-graphics sim-solve-fixed sim-solve-repl smoke
+.PHONY: uf2 picocalc-uf2
 
-all: $(HOST_SOLVE)
+.PHONY: all arm-probe bare-aeabi-double-probe bare-aeabi-double-probe-picolink bare-benchmark bare-benchmark-picolink bare-cube bare-cube-lto-picolink bare-cube-picolink bare-diagnostics bare-diagnostics-picolink bare-dma-probe bare-dma-probe-picolink bare-graphics bare-graphics-picolink bare-hello bare-hello-picolink bare-interrupt-probe bare-interrupt-probe-picolink bare-keys bare-keys-picolink bare-picolink-all bare-solve bare-solve-core-1bpp-picolink bare-solve-core-picolink bare-solve-fixed bare-solve-fixed-picolink bare-solve-lto bare-solve-picolink bare-thumb-probe bare-thumb-probe-picolink bare-uf2-all bare-uf2-menu bare-uf2-variants bare-vendor-startup-probe bare-vendor-startup-probe-picolink bin-emu-aeabi-double-probe bin-emu-aeabi-double-probe-picolink bin-emu-benchmark bin-emu-benchmark-picolink bin-emu-cube bin-emu-cube-gif bin-emu-cube-lto-picolink bin-emu-cube-picolink bin-emu-cyw43-trace-smoke bin-emu-diagnostics bin-emu-diagnostics-picolink bin-emu-dma-probe bin-emu-dma-probe-picolink bin-emu-graphics bin-emu-graphics-frames bin-emu-graphics-picolink bin-emu-hello bin-emu-hello-picolink bin-emu-hello-trace bin-emu-interrupt-probe bin-emu-interrupt-probe-picolink bin-emu-live-hello bin-emu-live-solve bin-emu-picow-wifi-diag bin-emu-sdk-hello bin-emu-solve bin-emu-solve-core-1bpp-picolink bin-emu-solve-core-picolink bin-emu-solve-fixed-picolink bin-emu-solve-lto bin-emu-solve-picolink bin-emu-thumb-probe bin-emu-thumb-probe-picolink bin-emu-vendor-startup-probe bin-emu-vendor-startup-probe-picolink clean cube-link-compare cyw43-blob-inventory emu-deterministic-tests emu-replay-manifest-check emu-vendor-probe font-cascadia font-cascadia-1bpp gui-graphics gui-hello gui-solve hello-linker-matrix hello-linker-matrix-small picolink-regression picow-wifi-diag sdk-hello-picolink-bin sdk-hello-uf2 sim-graphics sim-solve-fixed sim-solve-repl smoke
+
+all: uf2
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
@@ -292,7 +337,7 @@ bin-emu-hello: $(BIN_EMU) $(BARE_HELLO_BIN)
 	$(BIN_EMU) $(BARE_HELLO_BIN) $(EMU_DIR)/bare_hello.png
 
 bin-emu-hello-picolink: $(BIN_EMU) $(BARE_HELLO_PICOLINK_BIN)
-	$(BIN_EMU) $(BARE_HELLO_PICOLINK_BIN) $(EMU_DIR)/bare_hello_picolink.png --symbols=$(BARE_HELLO_PICOLINK_MAP) --expect-hash=$(EMU_HASH_HELLO)
+	$(BIN_EMU) $(BARE_HELLO_PICOLINK_BIN) $(EMU_DIR)/bare_hello_picolink.png --symbols=$(BARE_HELLO_PICOLINK_MAP) --expect-hash=$(EMU_HASH_HELLO_PICOLINK)
 
 bin-emu-hello-trace: $(BIN_EMU) $(BARE_HELLO_BIN)
 	$(BIN_EMU) $(BARE_HELLO_BIN) $(EMU_DIR)/bare_hello.png --trace=$(EMU_DIR)/bare_hello.trace
@@ -397,14 +442,30 @@ sdk-hello-uf2: font-cascadia
 bin-emu-sdk-hello: $(BIN_EMU) sdk-hello-uf2
 	$(BIN_EMU) $(SDK_HELLO_BIN) $(EMU_DIR)/picocalc_hello_flash.png --flash-start --report-milestones --max-steps=80000000
 
-picow-wifi-diag: $(BIN2UF2)
-	PICO_SDK_PATH=$(PICO_SDK_PATH) cmake -S . -B $(PICOW_BUILD_DIR) -DPICO_BOARD=pico_w
-	cmake --build $(PICOW_BUILD_DIR) --target picow_wifi_diag_sd -j2
-	$(BIN2UF2) --flash-start "$(PICOCALC_BOOT2_UF2)" $(PICOW_BUILD_DIR)/picow_wifi_diag.bin $(PICOW_WIFI_DIAG_MENU_UF2) $(PICOCALC_APP_FLASH_BASE) $(RP2040_UF2_FAMILY_ID)
-	@ls -lh $(PICOW_BUILD_DIR)/picow_wifi_diag.bin $(PICOW_BUILD_DIR)/picow_wifi_diag.uf2 $(PICOW_WIFI_DIAG_MENU_UF2)
+$(SDK_HELLO_PICOLINK_BIN): $(PICO_LINK) $(BARE_RUNTIME_ARCHIVE) font-cascadia
+	PICO_SDK_PATH=$(PICO_SDK_PATH) cmake -S . -B $(SDK_HELLO_BUILD_DIR) -DPICO_BOARD=pico_w
+	cmake --build $(SDK_HELLO_BUILD_DIR) --target picocalc_hello_sdk_picolink_probe -j2
+	find $(SDK_HELLO_BUILD_DIR)/CMakeFiles/picocalc_hello_sdk_picolink_probe.dir -name '*.o' | sort > $(SDK_HELLO_PICOLINK_OBJECTS)
+	$(BARE_CC) $(BARE_RELOC_LDFLAGS) -o $(SDK_HELLO_PICOLINK_RELOC) @$(SDK_HELLO_PICOLINK_OBJECTS)
+	$(BARE_STRIP) -g -o $(SDK_HELLO_PICOLINK_RELOC_STRIPPED) $(SDK_HELLO_PICOLINK_RELOC)
+	$(PICO_LINK) --stats --map=$(SDK_HELLO_PICOLINK_MAP) -o $(SDK_HELLO_PICOLINK_BIN) $(SDK_HELLO_PICOLINK_RELOC_STRIPPED) $(BARE_RUNTIME_ARCHIVE)
+	@ls -lh $(SDK_HELLO_PICOLINK_BIN)
+
+$(SDK_HELLO_PICOLINK_FLASH_BIN): $(PICO_LINK) $(BARE_RUNTIME_ARCHIVE) font-cascadia
+	PICO_SDK_PATH=$(PICO_SDK_PATH) cmake -S . -B $(SDK_HELLO_BUILD_DIR) -DPICO_BOARD=pico_w
+	cmake --build $(SDK_HELLO_BUILD_DIR) --target picocalc_hello_sdk_picolink_probe -j2
+	find $(SDK_HELLO_BUILD_DIR)/CMakeFiles/picocalc_hello_sdk_picolink_probe.dir -name '*.o' | sort > $(SDK_HELLO_PICOLINK_OBJECTS)
+	$(BARE_CC) $(BARE_RELOC_LDFLAGS) -o $(SDK_HELLO_PICOLINK_RELOC) @$(SDK_HELLO_PICOLINK_OBJECTS)
+	$(BARE_STRIP) -g -o $(SDK_HELLO_PICOLINK_RELOC_STRIPPED) $(SDK_HELLO_PICOLINK_RELOC)
+	$(PICO_LINK) --app-base=$(PICOCALC_FLASH_APP_BASE) --stats --map=$(SDK_HELLO_PICOLINK_FLASH_MAP) -o $(SDK_HELLO_PICOLINK_FLASH_BIN) $(SDK_HELLO_PICOLINK_RELOC_STRIPPED) $(BARE_RUNTIME_ARCHIVE)
+	@ls -lh $(SDK_HELLO_PICOLINK_FLASH_BIN)
+
+sdk-hello-picolink-bin: $(SDK_HELLO_PICOLINK_BIN)
+
+picow-wifi-diag: $(PICOW_WIFI_DIAG_UF2)
 
 bin-emu-picow-wifi-diag: $(BIN_EMU) picow-wifi-diag
-	$(BIN_EMU) $(PICOW_BUILD_DIR)/picow_wifi_diag.bin $(EMU_DIR)/picow_wifi_diag.png --trace=$(EMU_DIR)/picow_wifi_diag_cyw43.trace --trace-kinds=cyw43,unknown-mmio --cyw43-model --max-steps=$(PICOW_WIFI_DIAG_EMU_STEPS) --report-milestones
+	$(BIN_EMU) $(PICOW_WIFI_DIAG_FLASH_BIN) $(EMU_DIR)/picow_wifi_diag.png --flash-start --trace=$(EMU_DIR)/picow_wifi_diag_cyw43.trace --trace-kinds=cyw43,unknown-mmio --cyw43-model --max-steps=$(PICOW_WIFI_DIAG_EMU_STEPS) --report-milestones
 
 bin-emu-live-hello: $(BIN_EMU) $(BARE_HELLO_BIN)
 	$(BIN_EMU) $(BARE_HELLO_BIN) $(EMU_DIR)/bare_hello_live.png --live-terminal
@@ -442,7 +503,7 @@ picolink-regression: $(BIN_EMU) $(BARE_CUBE_BIN) $(BARE_SOLVE_BIN) $(BARE_PICOLI
 	awk -v image_size=$$(wc -c < $(BARE_THUMB_PICOLINK_BIN)) -f tests/check_picolink_symbols.awk $(BARE_THUMB_PICOLINK_MAP)
 	awk -v image_size=$$(wc -c < $(BARE_AEABI_DOUBLE_PICOLINK_BIN)) -f tests/check_picolink_symbols.awk $(BARE_AEABI_DOUBLE_PICOLINK_MAP)
 	awk -v image_size=$$(wc -c < $(BARE_VENDOR_STARTUP_PICOLINK_BIN)) -f tests/check_picolink_symbols.awk $(BARE_VENDOR_STARTUP_PICOLINK_MAP)
-	$(BIN_EMU) $(BARE_HELLO_PICOLINK_BIN) $(EMU_DIR)/test_hello_picolink.png --symbols=$(BARE_HELLO_PICOLINK_MAP) --expect-hash=$(EMU_HASH_HELLO)
+	$(BIN_EMU) $(BARE_HELLO_PICOLINK_BIN) $(EMU_DIR)/test_hello_picolink.png --symbols=$(BARE_HELLO_PICOLINK_MAP) --expect-hash=$(EMU_HASH_HELLO_PICOLINK)
 	$(BIN_EMU) $(BARE_GRAPHICS_PICOLINK_BIN) $(EMU_DIR)/test_graphics_picolink.png --symbols=$(BARE_GRAPHICS_PICOLINK_MAP) --expect-hash=$(EMU_HASH_GRAPHICS)
 	$(BIN_EMU) $(BARE_SOLVE_FIXED_PICOLINK_BIN) $(EMU_DIR)/test_solve_fixed_picolink.png --symbols=$(BARE_SOLVE_FIXED_PICOLINK_MAP) --expect-hash=$(EMU_HASH_SOLVE_FIXED_PICOLINK)
 	$(BIN_EMU) $(BARE_CUBE_PICOLINK_BIN) $(EMU_DIR)/test_cube_picolink.png --symbols=$(BARE_CUBE_PICOLINK_MAP) --frames=1 --max-steps=80000000 --expect-hash=$(EMU_HASH_CUBE_PICOLINK)
@@ -535,8 +596,72 @@ $(BARE_1BPP_DIR):
 $(BARE_UF2_DIR):
 	mkdir -p $(BARE_UF2_DIR)
 
+uf2 picocalc-uf2: $(PICOCALC_DELIVERABLE_UF2S)
+	@find $(BARE_UF2_DIR) -mindepth 1 -type d -exec rm -rf {} +
+	@set -e; for f in $(BARE_UF2_DIR)/*.uf2; do \
+		[ -e "$$f" ] || continue; \
+		name=$$(basename "$$f"); \
+		case " $(PICOCALC_DELIVERABLE_UF2_NAMES) " in *" $$name "*) ;; *) rm -f "$$f";; esac; \
+	done
+	@ls -lh $(PICOCALC_DELIVERABLE_UF2S)
+
+define PICOCALC_PICOLINK_UF2_RULE
+$(BARE_UF2_DIR)/$(1).uf2: $(2) $(BIN2UF2) | $(BARE_UF2_DIR)
+	$(BIN2UF2) --boot2-app "$$(PICOCALC_BOOT2_UF2)" $$< $$@ $$(PICOCALC_FLASH_APP_BASE) $$(RP2040_UF2_FAMILY_ID)
+endef
+
+$(eval $(call PICOCALC_PICOLINK_UF2_RULE,hello,$(BARE_HELLO_FLASH_PICOLINK_BIN)))
+$(eval $(call PICOCALC_PICOLINK_UF2_RULE,keys,$(BARE_KEYS_FLASH_PICOLINK_BIN)))
+$(eval $(call PICOCALC_PICOLINK_UF2_RULE,solve,$(BARE_SOLVE_FLASH_PICOLINK_BIN)))
+$(eval $(call PICOCALC_PICOLINK_UF2_RULE,graphics,$(BARE_GRAPHICS_FLASH_PICOLINK_BIN)))
+$(eval $(call PICOCALC_PICOLINK_UF2_RULE,cube,$(BARE_CUBE_FLASH_PICOLINK_BIN)))
+$(eval $(call PICOCALC_PICOLINK_UF2_RULE,benchmark,$(BARE_BENCHMARK_FLASH_PICOLINK_BIN)))
+$(eval $(call PICOCALC_PICOLINK_UF2_RULE,diagnostics,$(BARE_DIAGNOSTICS_FLASH_PICOLINK_BIN)))
+
+$(PICOW_WIFI_DIAG_UF2): $(BIN2UF2) CMakeLists.txt $(PICOCALC_SDK_SRC_DIR)/picow_wifi_diag.c | $(BARE_UF2_DIR)
+	PICO_SDK_PATH=$(PICO_SDK_PATH) cmake -S . -B $(PICOW_BUILD_DIR) -DPICO_BOARD=pico_w
+	cmake --build $(PICOW_BUILD_DIR) --target picow_wifi_diag_flash -j2
+	cp $(PICOW_WIFI_DIAG_FLASH_UF2) $@
+	@ls -lh $(PICOW_WIFI_DIAG_FLASH_BIN) $(PICOW_WIFI_DIAG_FLASH_UF2) $@
+
 $(BARE_UF2_MENU_DIR) $(BARE_UF2_VARIANTS_DIR):
 	mkdir -p $@
+
+$(HELLO_MATRIX_UF2_DIR):
+	mkdir -p $@
+
+$(HELLO_SMALL_UF2_DIR):
+	mkdir -p $@
+
+$(HELLO_MATRIX_SDK_GNU_UF2): $(SDK_HELLO_UF2) | $(HELLO_MATRIX_UF2_DIR)
+	cp $< $@
+
+$(HELLO_MATRIX_SDK_PICOLINK_UF2): $(SDK_HELLO_PICOLINK_BIN) $(BIN2UF2) | $(HELLO_MATRIX_UF2_DIR)
+	$(BIN2UF2) --flash-start "$(PICOCALC_BOOT2_UF2)" $< $@ $(PICOCALC_APP_FLASH_BASE) $(RP2040_UF2_FAMILY_ID)
+
+$(HELLO_MATRIX_NOSDK_GNU_UF2): $(BARE_HELLO_BIN) $(BIN2UF2) | $(HELLO_MATRIX_UF2_DIR)
+	$(BIN2UF2) --flash-start "$(PICOCALC_BOOT2_UF2)" $< $@ $(PICOCALC_APP_FLASH_BASE) $(RP2040_UF2_FAMILY_ID)
+
+$(HELLO_MATRIX_NOSDK_PICOLINK_UF2): $(BARE_HELLO_PICOLINK_BIN) $(BIN2UF2) | $(HELLO_MATRIX_UF2_DIR)
+	$(BIN2UF2) --flash-start "$(PICOCALC_BOOT2_UF2)" $< $@ $(PICOCALC_APP_FLASH_BASE) $(RP2040_UF2_FAMILY_ID)
+
+hello-linker-matrix: sdk-hello-uf2 sdk-hello-picolink-bin $(HELLO_MATRIX_SDK_GNU_UF2) $(HELLO_MATRIX_SDK_PICOLINK_UF2) $(HELLO_MATRIX_NOSDK_GNU_UF2) $(HELLO_MATRIX_NOSDK_PICOLINK_UF2)
+	@ls -lh $(HELLO_MATRIX_SDK_GNU_UF2) $(HELLO_MATRIX_SDK_PICOLINK_UF2) $(HELLO_MATRIX_NOSDK_GNU_UF2) $(HELLO_MATRIX_NOSDK_PICOLINK_UF2)
+
+$(HELLO_SMALL_SDK_GNU_UF2): $(SDK_HELLO_UF2) | $(HELLO_SMALL_UF2_DIR)
+	cp $< $@
+
+$(HELLO_SMALL_SDK_PICOLINK_UF2): $(SDK_HELLO_PICOLINK_FLASH_BIN) $(BIN2UF2) | $(HELLO_SMALL_UF2_DIR)
+	$(BIN2UF2) --boot2-app "$(PICOCALC_BOOT2_UF2)" $< $@ $(PICOCALC_FLASH_APP_BASE) $(RP2040_UF2_FAMILY_ID)
+
+$(HELLO_SMALL_NOSDK_GNU_UF2): $(BARE_HELLO_FLASH_BIN) $(BIN2UF2) | $(HELLO_SMALL_UF2_DIR)
+	$(BIN2UF2) --boot2-app "$(PICOCALC_BOOT2_UF2)" $< $@ $(PICOCALC_FLASH_APP_BASE) $(RP2040_UF2_FAMILY_ID)
+
+$(HELLO_SMALL_NOSDK_PICOLINK_UF2): $(BARE_HELLO_FLASH_PICOLINK_BIN) $(BIN2UF2) | $(HELLO_SMALL_UF2_DIR)
+	$(BIN2UF2) --boot2-app "$(PICOCALC_BOOT2_UF2)" $< $@ $(PICOCALC_FLASH_APP_BASE) $(RP2040_UF2_FAMILY_ID)
+
+hello-linker-matrix-small: sdk-hello-uf2 $(HELLO_SMALL_SDK_GNU_UF2) $(HELLO_SMALL_SDK_PICOLINK_UF2) $(HELLO_SMALL_NOSDK_GNU_UF2) $(HELLO_SMALL_NOSDK_PICOLINK_UF2)
+	@ls -lh $(HELLO_SMALL_SDK_GNU_UF2) $(HELLO_SMALL_SDK_PICOLINK_UF2) $(HELLO_SMALL_NOSDK_GNU_UF2) $(HELLO_SMALL_NOSDK_PICOLINK_UF2)
 
 $(BARE_UF2_MENU_DIR)/%.uf2: $(BARE_DIR)/%.bin $(BIN2UF2) | $(BARE_UF2_MENU_DIR)
 	$(BIN2UF2) --flash-start "$(PICOCALC_BOOT2_UF2)" $< $@ $(PICOCALC_APP_FLASH_BASE) $(RP2040_UF2_FAMILY_ID)
@@ -596,6 +721,9 @@ $(BARE_LTO_DIR)/solve.o: src/solve.c | $(BARE_LTO_DIR)
 $(BARE_DIR)/support.o: src/support.c | $(BARE_DIR)
 	$(BARE_CC) $(BARE_CFLAGS) -DPICOCALC_SOLVE_PROVIDE_MEMOPS -c $< -o $@
 
+$(BARE_DIR)/hello_picolink.o: $(PICOCALC_BARE_SRC_DIR)/hello.c | $(BARE_DIR)
+	$(BARE_CC) $(BARE_CFLAGS) -DPICOCALC_LINK_PICOLINK=1 -c $< -o $@
+
 $(BARE_LTO_DIR)/support.o: src/support.c | $(BARE_LTO_DIR)
 	$(BARE_CC) $(BARE_LTO_SUPPORT_CFLAGS) -DPICOCALC_SOLVE_PROVIDE_MEMOPS -c $< -o $@
 
@@ -613,8 +741,20 @@ $(BARE_HELLO_BIN): $(BARE_HELLO_ELF)
 
 bare-hello: $(BARE_HELLO_BIN)
 
+$(BARE_HELLO_FLASH_ELF): $(BARE_HELLO_OBJS) $(PICOCALC_BARE_SRC_DIR)/memmap_flash_rp2040.ld
+	$(BARE_CC) $(BARE_CFLAGS) $(BARE_FLASH_LDFLAGS) $(BARE_HELLO_OBJS) $(BARE_LDLIBS) -o $@
+
+$(BARE_HELLO_FLASH_BIN): $(BARE_HELLO_FLASH_ELF)
+	$(BARE_OBJCOPY) -O binary $< $@
+	$(BARE_SIZE) $<
+	od -An -tx4 -N8 $@
+
 $(BARE_HELLO_PICOLINK_BIN): $(PICO_LINK) $(BARE_HELLO_PICOLINK_OBJS)
 	$(PICO_LINK) --stats --map=$(BARE_HELLO_PICOLINK_MAP) -o $@ $(BARE_HELLO_PICOLINK_OBJS)
+	od -An -tx4 -N8 $@
+
+$(BARE_HELLO_FLASH_PICOLINK_BIN): $(PICO_LINK) $(BARE_HELLO_PICOLINK_OBJS)
+	$(PICO_LINK) --app-base=$(PICOCALC_FLASH_APP_BASE) --stats --map=$(BARE_HELLO_FLASH_PICOLINK_MAP) -o $@ $(BARE_HELLO_PICOLINK_OBJS)
 	od -An -tx4 -N8 $@
 
 bare-hello-picolink: $(BARE_HELLO_PICOLINK_BIN)
@@ -631,6 +771,10 @@ bare-keys: $(BARE_KEYS_BIN)
 
 $(BARE_KEYS_PICOLINK_BIN): $(PICO_LINK) $(BARE_KEYS_PICOLINK_OBJS)
 	$(PICO_LINK) --stats --map=$(BARE_KEYS_PICOLINK_MAP) -o $@ $(BARE_KEYS_PICOLINK_OBJS)
+	od -An -tx4 -N8 $@
+
+$(BARE_KEYS_FLASH_PICOLINK_BIN): $(PICO_LINK) $(BARE_KEYS_PICOLINK_OBJS)
+	$(PICO_LINK) --app-base=$(PICOCALC_FLASH_APP_BASE) --stats --map=$(BARE_KEYS_FLASH_PICOLINK_MAP) -o $@ $(BARE_KEYS_PICOLINK_OBJS)
 	od -An -tx4 -N8 $@
 
 bare-keys-picolink: $(BARE_KEYS_PICOLINK_BIN)
@@ -666,6 +810,10 @@ $(BARE_SOLVE_PICOLINK_RELOC): $(BARE_SOLVE_OBJS) $(BARE_RUNTIME_ARCHIVE)
 
 $(BARE_SOLVE_PICOLINK_BIN): $(PICO_LINK) $(BARE_SOLVE_OBJS) $(BARE_RUNTIME_ARCHIVE)
 	$(PICO_LINK) --stats --map=$(BARE_SOLVE_PICOLINK_MAP) -o $@ $(BARE_SOLVE_OBJS) $(BARE_RUNTIME_ARCHIVE)
+	od -An -tx4 -N8 $@
+
+$(BARE_SOLVE_FLASH_PICOLINK_BIN): $(PICO_LINK) $(BARE_SOLVE_OBJS) $(BARE_RUNTIME_ARCHIVE)
+	$(PICO_LINK) --app-base=$(PICOCALC_FLASH_APP_BASE) --stats --map=$(BARE_SOLVE_FLASH_PICOLINK_MAP) -o $@ $(BARE_SOLVE_OBJS) $(BARE_RUNTIME_ARCHIVE)
 	od -An -tx4 -N8 $@
 
 bare-solve-picolink: $(BARE_SOLVE_PICOLINK_BIN)
@@ -706,6 +854,10 @@ $(BARE_GRAPHICS_PICOLINK_BIN): $(PICO_LINK) $(BARE_GRAPHICS_PICOLINK_OBJS)
 	$(PICO_LINK) --stats --map=$(BARE_GRAPHICS_PICOLINK_MAP) -o $@ $(BARE_GRAPHICS_PICOLINK_OBJS)
 	od -An -tx4 -N8 $@
 
+$(BARE_GRAPHICS_FLASH_PICOLINK_BIN): $(PICO_LINK) $(BARE_GRAPHICS_PICOLINK_OBJS)
+	$(PICO_LINK) --app-base=$(PICOCALC_FLASH_APP_BASE) --stats --map=$(BARE_GRAPHICS_FLASH_PICOLINK_MAP) -o $@ $(BARE_GRAPHICS_PICOLINK_OBJS)
+	od -An -tx4 -N8 $@
+
 bare-graphics-picolink: $(BARE_GRAPHICS_PICOLINK_BIN)
 
 $(BARE_CUBE_ELF): $(BARE_CUBE_OBJS) $(PICOCALC_BARE_SRC_DIR)/memmap_sd_rp2040.ld
@@ -718,6 +870,10 @@ $(BARE_CUBE_BIN): $(BARE_CUBE_ELF)
 
 $(BARE_CUBE_PICOLINK_BIN): $(PICO_LINK) $(BARE_CUBE_PICOLINK_OBJS)
 	$(PICO_LINK) --stats --map=$(BARE_CUBE_PICOLINK_MAP) -o $@ $(BARE_CUBE_PICOLINK_OBJS)
+	od -An -tx4 -N8 $@
+
+$(BARE_CUBE_FLASH_PICOLINK_BIN): $(PICO_LINK) $(BARE_CUBE_PICOLINK_OBJS)
+	$(PICO_LINK) --app-base=$(PICOCALC_FLASH_APP_BASE) --stats --map=$(BARE_CUBE_FLASH_PICOLINK_MAP) -o $@ $(BARE_CUBE_PICOLINK_OBJS)
 	od -An -tx4 -N8 $@
 
 bare-cube: $(BARE_CUBE_BIN)
@@ -747,6 +903,10 @@ $(BARE_BENCHMARK_PICOLINK_BIN): $(PICO_LINK) $(BARE_BENCHMARK_PICOLINK_OBJS)
 	$(PICO_LINK) --stats --map=$(BARE_BENCHMARK_PICOLINK_MAP) -o $@ $(BARE_BENCHMARK_PICOLINK_OBJS)
 	od -An -tx4 -N8 $@
 
+$(BARE_BENCHMARK_FLASH_PICOLINK_BIN): $(PICO_LINK) $(BARE_BENCHMARK_PICOLINK_OBJS)
+	$(PICO_LINK) --app-base=$(PICOCALC_FLASH_APP_BASE) --stats --map=$(BARE_BENCHMARK_FLASH_PICOLINK_MAP) -o $@ $(BARE_BENCHMARK_PICOLINK_OBJS)
+	od -An -tx4 -N8 $@
+
 bare-benchmark-picolink: $(BARE_BENCHMARK_PICOLINK_BIN)
 
 $(BARE_DIAGNOSTICS_ELF): $(BARE_DIAGNOSTICS_OBJS) $(PICOCALC_BARE_SRC_DIR)/memmap_sd_rp2040.ld
@@ -761,6 +921,10 @@ bare-diagnostics: $(BARE_DIAGNOSTICS_BIN)
 
 $(BARE_DIAGNOSTICS_PICOLINK_BIN): $(PICO_LINK) $(BARE_DIAGNOSTICS_PICOLINK_OBJS)
 	$(PICO_LINK) --stats --map=$(BARE_DIAGNOSTICS_PICOLINK_MAP) -o $@ $(BARE_DIAGNOSTICS_PICOLINK_OBJS)
+	od -An -tx4 -N8 $@
+
+$(BARE_DIAGNOSTICS_FLASH_PICOLINK_BIN): $(PICO_LINK) $(BARE_DIAGNOSTICS_PICOLINK_OBJS)
+	$(PICO_LINK) --app-base=$(PICOCALC_FLASH_APP_BASE) --stats --map=$(BARE_DIAGNOSTICS_FLASH_PICOLINK_MAP) -o $@ $(BARE_DIAGNOSTICS_PICOLINK_OBJS)
 	od -An -tx4 -N8 $@
 
 bare-diagnostics-picolink: $(BARE_DIAGNOSTICS_PICOLINK_BIN)

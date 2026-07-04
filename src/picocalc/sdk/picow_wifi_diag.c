@@ -197,6 +197,7 @@ static void connect_selected_open(void) {
     char line[DIAG_COLS + 1];
     int err;
     int status;
+    absolute_time_t deadline;
     if (g_ap_count <= 0) {
         set_status("no AP selected");
         return;
@@ -208,8 +209,16 @@ static void connect_selected_open(void) {
     }
     snprintf(line, sizeof(line), "connecting to %.22s", ap->ssid);
     set_status(line);
-    err = cyw43_arch_wifi_connect_timeout_ms(ap->ssid, NULL, CYW43_AUTH_OPEN, CONNECT_TIMEOUT_MS);
-    status = cyw43_tcpip_link_status(&cyw43_state, CYW43_ITF_STA);
+    err = cyw43_wifi_join(&cyw43_state, strlen(ap->ssid), (const uint8_t *)ap->ssid,
+                          0, NULL, CYW43_AUTH_OPEN, ap->bssid, ap->channel);
+    deadline = make_timeout_time_ms(CONNECT_TIMEOUT_MS);
+    status = err == 0 ? cyw43_wifi_link_status(&cyw43_state, CYW43_ITF_STA) : CYW43_LINK_FAIL;
+    while (err == 0 && status == CYW43_LINK_DOWN && !time_reached(deadline)) {
+        cyw43_arch_poll();
+        sleep_ms(20);
+        status = cyw43_wifi_link_status(&cyw43_state, CYW43_ITF_STA);
+    }
+    if (err == 0 && status == CYW43_LINK_DOWN) status = CYW43_LINK_NONET;
     snprintf(line, sizeof(line), "connect err=%d link=%s", err, link_name(status));
     set_status(line);
     draw_bssid(ap);

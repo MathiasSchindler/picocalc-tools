@@ -81,6 +81,37 @@ pico_enable_stdio_usb(picocalc_hello_flash 1)
 pico_enable_stdio_uart(picocalc_hello_flash 1)
 pico_add_extra_outputs(picocalc_hello_flash)
 
+add_executable(picocalc_hello_sdk_picolink_probe
+    src/picocalc/bare/hello.c
+    src/picocalc/bare/picocalc_lcd_bare.c
+    src/picocalc/sdk/hello_flash_main.c
+)
+
+target_compile_options(picocalc_hello_sdk_picolink_probe PRIVATE
+    -Wall
+    -Wextra
+    -Os
+)
+
+target_compile_definitions(picocalc_hello_sdk_picolink_probe PRIVATE
+    PICOCALC_SDK_FLASH=1
+    PICOCALC_LINK_PICOLINK=1
+)
+
+target_include_directories(picocalc_hello_sdk_picolink_probe PRIVATE
+    ${CMAKE_CURRENT_LIST_DIR}/src/picocalc/bare
+    ${CMAKE_CURRENT_LIST_DIR}/src/picocalc/sdk
+    ${CMAKE_CURRENT_LIST_DIR}/build/font
+)
+
+target_link_libraries(picocalc_hello_sdk_picolink_probe PRIVATE
+    pico_stdlib
+)
+
+pico_enable_stdio_usb(picocalc_hello_sdk_picolink_probe 0)
+pico_enable_stdio_uart(picocalc_hello_sdk_picolink_probe 0)
+pico_add_extra_outputs(picocalc_hello_sdk_picolink_probe)
+
 add_executable(picocalc_solve_sd ${PICOCALC_SOLVE_SOURCES})
 configure_picocalc_solve_target(picocalc_solve_sd)
 set_target_properties(picocalc_solve_sd PROPERTIES OUTPUT_NAME solve)
@@ -92,34 +123,47 @@ elseif(PICO_PLATFORM MATCHES "rp2350")
 endif()
 
 if(PICO_CYW43_SUPPORTED)
-    add_executable(picow_wifi_diag_sd
-        src/picocalc/sdk/picow_wifi_diag.c
-    )
-
-    target_compile_options(picow_wifi_diag_sd PRIVATE
+    function(configure_picow_wifi_diag_target target)
+    target_compile_options(${target} PRIVATE
         -Wall
         -Wextra
         -Os
     )
 
-    target_include_directories(picow_wifi_diag_sd PRIVATE
+    target_compile_definitions(${target} PRIVATE
+        CYW43_LWIP=0
+    )
+
+    target_include_directories(${target} PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}/src/picocalc/sdk
         ${CMAKE_CURRENT_LIST_DIR}/vendor/PicoCalc/Code/picocalc_helloworld/i2ckbd
         ${CMAKE_CURRENT_LIST_DIR}/vendor/PicoCalc/Code/pico_multi_booter/sd_boot/lcdspi
     )
 
-    target_link_libraries(picow_wifi_diag_sd PRIVATE
+    target_link_libraries(${target} PRIVATE
         pico_stdlib
-        pico_cyw43_arch_lwip_poll
+        pico_cyw43_arch_poll
         hardware_i2c
         hardware_spi
         i2ckbd
         lcdspi
     )
 
-    pico_enable_stdio_usb(picow_wifi_diag_sd 1)
-    pico_enable_stdio_uart(picow_wifi_diag_sd 1)
-    pico_add_extra_outputs(picow_wifi_diag_sd)
+    pico_enable_stdio_usb(${target} 0)
+    pico_enable_stdio_uart(${target} 0)
+    pico_add_extra_outputs(${target})
+    endfunction()
+
+    add_executable(picow_wifi_diag_flash
+        src/picocalc/sdk/picow_wifi_diag.c
+    )
+    configure_picow_wifi_diag_target(picow_wifi_diag_flash)
+    set_target_properties(picow_wifi_diag_flash PROPERTIES OUTPUT_NAME picow_wifi_diag_flash)
+
+    add_executable(picow_wifi_diag_sd
+        src/picocalc/sdk/picow_wifi_diag.c
+    )
+    configure_picow_wifi_diag_target(picow_wifi_diag_sd)
     set_target_properties(picow_wifi_diag_sd PROPERTIES OUTPUT_NAME picow_wifi_diag)
 
     if(PICO_PLATFORM STREQUAL "rp2040")

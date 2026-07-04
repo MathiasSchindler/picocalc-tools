@@ -59,13 +59,13 @@ make bin-emu-cyw43-trace-smoke
 
 This is Tier B/Tier C scaffolding: useful for blob-backed Pico W bring-up and protocol capture, not a complete CYW43439 radio emulator.
 
-The first PicoCalc/Pico W hardware diagnostic is `picow_wifi_diag`. It builds a PicoCalc SD-app-style raw binary using the Pico SDK `cyw43` stack and the PicoCalc LCD/keyboard libraries:
+The first PicoCalc/Pico W hardware diagnostic is `picow_wifi_diag`. It builds a flash-start UF2 using the Pico SDK `cyw43` stack and the PicoCalc LCD/keyboard libraries:
 
 ```sh
 make picow-wifi-diag
 ```
 
-The hardware test binary is `build-picow/picow_wifi_diag.bin`. CMake also emits `build-picow/picow_wifi_diag.uf2`, but that file is addressed at the PicoCalc app slot and is not suitable for the current `/pico1-apps` UF2 menu by itself. The Make target therefore also writes `build-picow/picow_wifi_diag_menu.uf2`, a flash-start wrapper UF2 for the PicoCalc SD v0.6-style menu. A blank Pico W still needs a PicoCalc bootloader or full base firmware first. On the PicoCalc, the app scans for nearby Wi-Fi networks, marks open APs, and only attempts `CYW43_AUTH_OPEN` connections. Controls are `r` to rescan, Enter to try the selected open AP, `j`/`k` or arrow keys to move selection, and `q`/Esc to quit/deinit.
+The hardware test binary is `build/picow/picow_wifi_diag_flash.bin`; the Make target copies the normal flash-start SDK UF2 to `build/uf2/wifi_diag.uf2`. The diagnostic intentionally disables USB/UART stdio and avoids lwIP, so it brings up only the CYW43 Wi-Fi scan/join path needed for PicoCalc display testing. A blank Pico W still needs a PicoCalc bootloader or full base firmware first. On the PicoCalc, the app scans for nearby Wi-Fi networks, marks open APs, and only attempts `CYW43_AUTH_OPEN` joins. Controls are `r` to rescan, Enter to try the selected open AP, `j`/`k` or arrow keys to move selection, and `q`/Esc to quit/deinit.
 
 You can run the same image through the emulator CYW43 trace harness with:
 
@@ -101,10 +101,34 @@ The PicoCalc LCD output uses a buffered text console instead of the vendor drive
 The first bare-metal proof target builds without the Pico SDK or libc:
 
 ```sh
+make
+```
+
+The default build writes the current PicoCalc UF2 deliverables directly under `build/uf2/`: `hello.uf2`, `keys.uf2`, `solve.uf2`, `graphics.uf2`, `cube.uf2`, `benchmark.uf2`, `diagnostics.uf2`, and `wifi_diag.uf2`. The first seven are compact SDK-free `pico_link` images linked at `0x10000100` and packaged as `boot2 + app`; `wifi_diag.uf2` is the explicit Pico W exception and includes the Pico SDK/CYW43 stack needed to talk to the Infineon Wi-Fi chip. The default target also tidies `build/uf2` so it contains only those UF2 files.
+
+The simplest raw binary proof target is still available separately:
+
+```sh
 make bare-hello
 ```
 
 This writes `build/bare/bare_hello.bin`, a PicoCalc SD-bootloader-style raw binary linked at `0x10032000`. Copy it to the SD card's `firmware/` directory to test the direct-register LCD hello screen.
+
+To compare whether hello-boot problems come from SDK startup or the final linker, build the four-way UF2 matrix:
+
+```sh
+make hello-linker-matrix
+```
+
+This writes PicoCalc-menu-compatible wrapper UF2s under `build/uf2/hello-matrix/`: `hello_sdk_gnu.uf2`, `hello_sdk_picolink.uf2`, `hello_nosdk_gnu.uf2`, and `hello_nosdk_picolink.uf2`. These files are intentionally large because they are contiguous from flash start through the PicoCalc app slot at `0x10032000`; the wrapper at flash start jumps into the app-slot image. Each screen identifies its SDK/no-SDK and GNU/picolink quadrant.
+
+For compact BOOTSEL/direct-flash tests, build the equivalent flash-start hello matrix:
+
+```sh
+make hello-linker-matrix-small
+```
+
+This writes `build/uf2/hello-small/hello_sdk_gnu.uf2`, `hello_sdk_picolink.uf2`, `hello_nosdk_gnu.uf2`, and `hello_nosdk_picolink.uf2`. The no-SDK GNU and `pico_link` variants are linked at `0x10000100` and packaged as `boot2 + app`, so the tiny hello UF2s are around 15-16 KiB instead of about 400 KiB. Keep the wrapper matrix for PicoCalc menu regression tests until the compact flash-start files have been tested on hardware.
 
 The next bare hardware test adds direct I2C1 keyboard polling:
 
@@ -154,7 +178,7 @@ For PicoCalc SD v0.6-style UF2 loader menus, the main SDK-free app-slot binaries
 make bare-uf2-menu
 ```
 
-This writes the recommended copy-to-SD set under `build/uf2/menu/`, including `bare_cube.uf2`, `bare_solve.uf2`, `bare_graphics.uf2`, and `bare_diagnostics.uf2`. Experimental LTO, `pico_link`, fixed-solve, and focused probe UF2s are kept out of that directory; build them with `make bare-uf2-variants`, or build everything with `make bare-uf2-all`. The raw `.bin` files remain the right format for the older `/firmware` SD-app loader path.
+This legacy target writes its copy-to-SD set under `build/uf2/menu/`. The default `make` target is now the cleaner path for day-to-day PicoCalc UF2s: it emits the current `pico_link` deliverables directly in `build/uf2` and removes nested UF2 directories afterward. The raw `.bin` files remain the right format for the older `/firmware` SD-app loader path.
 
 The custom dependency-free `pico_link` path links the same bare solve firmware directly from relocatable objects plus the local PicoCalc runtime archive:
 
