@@ -193,10 +193,24 @@
 
 #define LIVE_COLS 80
 #define LIVE_ROWS 40
+#define SYMBOL_MAP_MAX_SIZE (128u * 1024u)
+#define SYMBOL_MAP_MAX_SYMBOLS 1024
+#define SYMBOL_MAP_NAME_STORAGE (32u * 1024u)
 
 #include "emu_state.h"
 
 static EmuState g_emu;
+
+typedef struct {
+    u32 value;
+    const char *name;
+} SymbolMapEntry;
+
+static char g_symbol_map_storage[SYMBOL_MAP_MAX_SIZE + 1u];
+static char g_symbol_name_storage[SYMBOL_MAP_NAME_STORAGE];
+static SymbolMapEntry g_symbol_map[SYMBOL_MAP_MAX_SYMBOLS];
+static int g_symbol_map_count;
+static usize g_symbol_name_used;
 
 #define g_flash g_emu.flash
 #define g_flash_size g_emu.flash_size
@@ -398,12 +412,128 @@ static u32 framebuffer_hash(void) {
     return hash;
 }
 
+static int parse_map_hex(const char **text_io, u32 *out_value) {
+    const char *text = *text_io;
+    u32 value = 0;
+    int any = 0;
+    if (text[0] == '0' && (text[1] == 'x' || text[1] == 'X')) text += 2;
+    while (*text != 0 && *text != ' ' && *text != '\t' && *text != '\r' && *text != '\n') {
+        int digit = hex_value(*text);
+        if (digit < 0) return 0;
+        value = (value << 4) | (u32)digit;
+        any = 1;
+        text += 1;
+    }
+    if (!any) return 0;
+    *text_io = text;
+    *out_value = value;
+    return 1;
+}
+
+static int line_is_symbols_header(const char *line, const char *end) {
+    const char text[] = "SYMBOLS";
+    usize index = 0;
+    while (line + index < end && text[index] != 0) {
+        if (line[index] != text[index]) return 0;
+        index += 1u;
+    }
+    return text[index] == 0 && line + index == end;
+}
+
+static void add_symbol_map_entry(u32 value, const char *name, const char *end) {
+    usize name_len = 0;
+    char *stored;
+    if (g_symbol_map_count >= SYMBOL_MAP_MAX_SYMBOLS) return;
+    while (name + name_len < end && name[name_len] != 0) name_len += 1u;
+    while (name_len > 0u && (name[name_len - 1u] == ' ' || name[name_len - 1u] == '\t' || name[name_len - 1u] == '\r')) name_len -= 1u;
+    if (name_len == 0u || g_symbol_name_used + name_len + 1u > SYMBOL_MAP_NAME_STORAGE) return;
+    stored = g_symbol_name_storage + g_symbol_name_used;
+    for (usize index = 0; index < name_len; ++index) stored[index] = name[index];
+    stored[name_len] = 0;
+    g_symbol_name_used += name_len + 1u;
+    g_symbol_map[g_symbol_map_count].value = value;
+    g_symbol_map[g_symbol_map_count].name = stored;
+    g_symbol_map_count += 1;
+}
+
+static void load_symbol_map(const char *path) {
+    long fd = sys_openat(AT_FDCWD, path, O_RDONLY, 0);
+    usize offset = 0;
+    int in_symbols = 0;
+    char *line;
+    if (fd < 0) {
+        out("failed to open symbol map\n");
+        sys_exit(1);
+    }
+    while (offset < SYMBOL_MAP_MAX_SIZE) {
+        long got = sys_read((int)fd, g_symbol_map_storage + offset, SYMBOL_MAP_MAX_SIZE - offset);
+        if (got < 0) {
+            (void)sys_close((int)fd);
+            out("failed to read symbol map\n");
+            sys_exit(1);
+        }
+        if (got == 0) break;
+        offset += (usize)got;
+    }
+    (void)sys_close((int)fd);
+    if (offset >= SYMBOL_MAP_MAX_SIZE) {
+        out("symbol map too large\n");
+        sys_exit(1);
+    }
+    g_symbol_map_storage[offset] = 0;
+    line = g_symbol_map_storage;
+    while (*line != 0) {
+        char *end = line;
+        while (*end != 0 && *end != '\n') end += 1;
+        if (in_symbols) {
+            const char *cursor = line;
+            u32 value;
+            if (parse_map_hex(&cursor, &value)) {
+                while (cursor < end && (*cursor == ' ' || *cursor == '\t')) cursor += 1;
+                add_symbol_map_entry(value, cursor, end);
+            }
+        } else if (line_is_symbols_header(line, end)) {
+            in_symbols = 1;
+        }
+        line = *end == '\n' ? end + 1 : end;
+    }
+}
+
+static const SymbolMapEntry *lookup_symbol(u32 pc) {
+    const SymbolMapEntry *best = 0;
+    for (int index = 0; index < g_symbol_map_count; ++index) {
+        const SymbolMapEntry *entry = g_symbol_map + index;
+        if (entry->value == 0u || entry->value > pc) continue;
+        if (best == 0 || entry->value > best->value) best = entry;
+    }
+    return best;
+}
+
+static void out_symbol_for_pc(u32 pc) {
+    const SymbolMapEntry *entry = lookup_symbol(pc);
+    u32 offset;
+    if (entry == 0) return;
+    offset = pc - entry->value;
+    out(" (");
+    out(entry->name);
+    if (offset != 0u) {
+        out("+");
+        out_hex(offset);
+    }
+    out(")");
+}
+
+static void out_pc(u32 pc) {
+    out_hex(pc);
+    out_symbol_for_pc(pc);
+}
+
 static void report_lcd_milestones(void) {
     if (!g_report_milestones) return;
     out("lcd milestones:");
     if (g_seen_lcd_command) {
         out(" first-cmd="); out_hex(g_first_lcd_command);
-        out(" pc="); out_hex(g_first_lcd_command_pc);
+        out(" pc="); out_pc(g_first_lcd_command_pc);
         out(" cycles="); out_hex(g_first_lcd_command_cycles);
     } else {
         out(" first-cmd=none");
@@ -412,7 +542,7 @@ static void report_lcd_milestones(void) {
         out(" first-pixel x="); out_hex(g_first_lcd_pixel_x);
         out(" y="); out_hex(g_first_lcd_pixel_y);
         out(" rgb="); out_hex(g_first_lcd_pixel_rgb);
-        out(" pc="); out_hex(g_first_lcd_pixel_pc);
+        out(" pc="); out_pc(g_first_lcd_pixel_pc);
         out(" cycles="); out_hex(g_first_lcd_pixel_cycles);
     } else {
         out(" first-pixel=none");
@@ -421,7 +551,7 @@ static void report_lcd_milestones(void) {
         out(" first-nonblack x="); out_hex(g_first_lcd_nonblack_x);
         out(" y="); out_hex(g_first_lcd_nonblack_y);
         out(" rgb="); out_hex(g_first_lcd_nonblack_rgb);
-        out(" pc="); out_hex(g_first_lcd_nonblack_pc);
+        out(" pc="); out_pc(g_first_lcd_nonblack_pc);
         out(" cycles="); out_hex(g_first_lcd_nonblack_cycles);
     } else {
         out(" first-nonblack=none");
@@ -2031,7 +2161,7 @@ static int run_bin(const char *in_path, const char *image_path, const char *key_
         u32 pc = cpu.r[15];
         u16 op = mem_read16(pc);
         if (!executable_addr(pc)) {
-            out("invalid execute pc="); out_hex(pc); out("\n");
+            out("invalid execute pc="); out_pc(pc); out("\n");
             report_lcd_milestones();
             save_flash_state();
             terminal_leave_live();
@@ -2053,7 +2183,7 @@ static int run_bin(const char *in_path, const char *image_path, const char *key_
         if (try_accelerate_timer_poll_branch(&cpu)) continue;
         if (step(&cpu) != 0) {
             out("emulation stopped at step "); out_hex(cpu.steps);
-            out(" pc="); out_hex(pc);
+            out(" pc="); out_pc(pc);
             out(" op="); out_hex(op);
             out(" r0="); out_hex(cpu.r[0]); out(" r1="); out_hex(cpu.r[1]);
             out(" r2="); out_hex(cpu.r[2]); out(" r3="); out_hex(cpu.r[3]);
@@ -2071,9 +2201,9 @@ static int run_bin(const char *in_path, const char *image_path, const char *key_
     }
     spi_service(1);
     if (g_frame_ready) {
-        out("frame ready at simulated ms="); out_hex(g_sim_ms); out(" pc="); out_hex(cpu.r[15]); out("\n");
+        out("frame ready at simulated ms="); out_hex(g_sim_ms); out(" pc="); out_pc(cpu.r[15]); out("\n");
     } else if (cpu.steps >= g_max_steps) {
-        out("frame budget reached pc="); out_hex(cpu.r[15]);
+        out("frame budget reached pc="); out_pc(cpu.r[15]);
         out(" r0="); out_hex(cpu.r[0]); out(" r1="); out_hex(cpu.r[1]);
         out(" r2="); out_hex(cpu.r[2]); out(" r3="); out_hex(cpu.r[3]);
         out(" r4="); out_hex(cpu.r[4]); out(" r5="); out_hex(cpu.r[5]);
@@ -2113,7 +2243,7 @@ __attribute__((used)) int emu_main(int argc, char **argv) {
     int frames = 1;
     int i;
     if (argc < 3) {
-        out("usage: bin_emu input.bin output.png|output.gif [key-script|-|@file] [--frames=N] [--gif-fps=N] [--trace[=path]] [--trace-kinds=base,calls,unknown-mmio,xip|all] [--expect-hash=HEX] [--max-steps=N] [--fail-on-budget] [--report-milestones] [--live-terminal] [--flash-state=PATH]\n");
+        out("usage: bin_emu input.bin output.png|output.gif [key-script|-|@file] [--frames=N] [--gif-fps=N] [--trace[=path]] [--trace-kinds=base,calls,unknown-mmio,xip|all] [--expect-hash=HEX] [--max-steps=N] [--fail-on-budget] [--report-milestones] [--live-terminal] [--flash-state=PATH] [--symbols=MAP]\n");
         return 1;
     }
     g_trace_fd = -1;
@@ -2168,6 +2298,8 @@ __attribute__((used)) int emu_main(int argc, char **argv) {
             g_live_terminal = 1;
         } else if (str_starts(argv[i], "--flash-state=")) {
             g_flash_state_path = argv[i] + 14;
+        } else if (str_starts(argv[i], "--symbols=")) {
+            load_symbol_map(argv[i] + 10);
         } else {
             key_script = argv[i];
         }

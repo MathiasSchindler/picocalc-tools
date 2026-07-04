@@ -10,10 +10,12 @@ bin_emu - no-libc Linux emulator for PicoCalc/RP2040 flat `.bin` firmware images
 build/emu/bin_emu INPUT.bin OUTPUT.png [KEYS]
 build/emu/bin_emu INPUT.bin OUTPUT.gif [KEYS] --frames=N --gif-fps=N
 build/emu/bin_emu INPUT.bin OUTPUT.png [KEYS] --trace[=PATH]
+build/emu/bin_emu INPUT.bin OUTPUT.png [KEYS] --symbols=MAP
 
 make bin-emu-cube
 make bin-emu-cube-picolink
 make bin-emu-cube-gif
+make picolink-regression
 ```
 
 ## DESCRIPTION
@@ -36,6 +38,7 @@ The emulator is a no-libc Linux host program. It uses `_start`, direct syscalls,
 - writes looping GIF captures when the output path ends in `.gif` and frame capture is requested
 - supports scripted keyboard input from an argument, stdin, or an `@file` replay
 - supports trace output for base execution events, Boot ROM calls, unknown MMIO, and XIP SSI MMIO
+- supports `pico_link` map files for symbol names in human-facing PC reports
 - supports persistent flash-state files for Boot ROM flash erase/program experiments
 - supports deterministic hash checks for regression tests
 
@@ -65,6 +68,7 @@ Vendor images under `vendor/images` are also used as compatibility probes. They 
 - `--report-milestones` print first LCD command, first pixel, and first nonblack pixel milestones
 - `--live-terminal` use live terminal keyboard input; if no key script is provided, stdin is used
 - `--flash-state=PATH` load and save persistent emulated flash contents at `PATH`
+- `--symbols=MAP` read a `pico_link` map file and annotate PCs in frame-ready, budget, crash, and LCD-milestone reports
 
 ## EXAMPLES
 
@@ -78,6 +82,12 @@ Run the `pico_link` cube image and write a PNG:
 
 ```
 make bin-emu-cube-picolink
+```
+
+Run the focused `pico_link` regression set, including the custom-linked cube, hybrid LTO cube, and solve images:
+
+```
+make picolink-regression
 ```
 
 Capture the cube demo as an animated GIF:
@@ -107,6 +117,8 @@ build/emu/bin_emu build/bare/bare_vendor_startup_probe.bin \
 `pico_link` produces flat `.bin` images. `bin_emu` is the fastest local way to check whether those images boot, run, and produce expected screen output before copying them to a PicoCalc.
 
 The emulator does not require `pico_link` output to be byte-identical to GNU ld output. A `pico_link` image is acceptable when the vector table, memory layout, relocations, runtime behavior, and hardware-screen behavior are correct for the target profile.
+
+When a `pico_link` map is available, pass `--symbols=MAP` to make budget and failure reports name the nearest symbol, for example `pc=0x1003304c (bare_main+0x00000527)`. The Makefile's picolink emulator targets pass their maps automatically.
 
 ## LIMITATIONS
 

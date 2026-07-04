@@ -26,6 +26,9 @@ EMU_SOLVE_REPLAY := tests/solve_replay.keys
 EMU_HASH_HELLO := 0x8ff880ad
 EMU_HASH_GRAPHICS := 0x401ffcba
 EMU_HASH_SOLVE := 0x34c38b9e
+EMU_HASH_SOLVE_PICOLINK := 0x34c38b9e
+EMU_HASH_CUBE_PICOLINK := 0x69868aba
+EMU_HASH_CUBE_LTO_PICOLINK := 0xbd1ce24b
 EMU_HASH_INTERRUPT := 0x9a855e0b
 EMU_HASH_DMA := 0x6837fa02
 EMU_HASH_THUMB := 0x32d38172
@@ -75,6 +78,9 @@ BARE_SOLVE_FIXED_ELF := $(BARE_DIR)/bare_solve_fixed.elf
 BARE_SOLVE_FIXED_BIN := $(BARE_DIR)/bare_solve_fixed.bin
 BARE_SOLVE_ELF := $(BARE_DIR)/bare_solve.elf
 BARE_SOLVE_BIN := $(BARE_DIR)/bare_solve.bin
+BARE_SOLVE_PICOLINK_RELOC := $(BARE_DIR)/bare_solve_picolink_reloc.o
+BARE_SOLVE_PICOLINK_BIN := $(BARE_DIR)/bare_solve_picolink.bin
+BARE_SOLVE_PICOLINK_MAP := $(BARE_DIR)/bare_solve_picolink.map
 BARE_GRAPHICS_ELF := $(BARE_DIR)/bare_graphics.elf
 BARE_GRAPHICS_BIN := $(BARE_DIR)/bare_graphics.bin
 BARE_CUBE_ELF := $(BARE_DIR)/bare_cube.elf
@@ -97,6 +103,7 @@ BARE_VENDOR_STARTUP_BIN := $(BARE_DIR)/bare_vendor_startup_probe.bin
 BARE_CFLAGS ?= -std=c11 -Wall -Wextra -Os -ffreestanding -fno-builtin -fno-stack-protector -ffunction-sections -fdata-sections -mcpu=cortex-m0plus -mthumb -I$(PICOCALC_BARE_SRC_DIR) -Isrc -I$(FONT_DIR)
 BARE_LDFLAGS ?= -nostdlib -Wl,--gc-sections -T$(PICOCALC_BARE_SRC_DIR)/memmap_sd_rp2040.ld
 BARE_LDLIBS ?= -lgcc
+BARE_RELOC_LDFLAGS ?= -r -nostdlib -mcpu=cortex-m0plus -mthumb
 BARE_LTO_DIR := $(BUILD_DIR)/bare-lto
 BARE_LTO_CFLAGS ?= $(BARE_CFLAGS) -flto=auto
 BARE_LTO_SUPPORT_CFLAGS ?= $(BARE_CFLAGS)
@@ -124,7 +131,7 @@ BARE_VENDOR_STARTUP_OBJS := $(BARE_DIR)/start.o $(BARE_DIR)/picocalc_lcd_bare.o 
 BARE_SOLVE_LTO_OBJS := $(BARE_LTO_DIR)/start.o $(BARE_LTO_DIR)/picocalc_lcd_bare.o $(BARE_LTO_DIR)/picocalc_kbd_bare.o $(BARE_LTO_DIR)/solve_repl.o $(BARE_LTO_DIR)/solve_repl_bare_input.o $(BARE_LTO_DIR)/solve.o $(BARE_LTO_DIR)/support.o
 BARE_CUBE_LTO_OBJS := $(BARE_LTO_DIR)/start.o $(BARE_LTO_DIR)/picocalc_lcd_bare.o $(BARE_LTO_DIR)/picocalc_kbd_bare.o $(BARE_LTO_DIR)/cube.o
 
-.PHONY: all arm-probe bare-benchmark bare-cube bare-cube-lto-picolink bare-cube-picolink bare-diagnostics bare-dma-probe bare-graphics bare-hello bare-interrupt-probe bare-keys bare-solve bare-solve-fixed bare-solve-lto bare-thumb-probe bare-vendor-startup-probe bin-emu-benchmark bin-emu-cube bin-emu-cube-gif bin-emu-cube-lto-picolink bin-emu-cube-picolink bin-emu-diagnostics bin-emu-dma-probe bin-emu-graphics bin-emu-graphics-frames bin-emu-hello bin-emu-hello-trace bin-emu-interrupt-probe bin-emu-live-hello bin-emu-live-solve bin-emu-solve bin-emu-solve-lto bin-emu-thumb-probe bin-emu-vendor-startup-probe clean cube-link-compare emu-deterministic-tests emu-replay-manifest-check emu-vendor-probe font-cascadia gui-graphics gui-hello gui-solve sim-graphics sim-solve-fixed sim-solve-repl smoke
+.PHONY: all arm-probe bare-benchmark bare-cube bare-cube-lto-picolink bare-cube-picolink bare-diagnostics bare-dma-probe bare-graphics bare-hello bare-interrupt-probe bare-keys bare-solve bare-solve-fixed bare-solve-lto bare-solve-picolink bare-thumb-probe bare-vendor-startup-probe bin-emu-benchmark bin-emu-cube bin-emu-cube-gif bin-emu-cube-lto-picolink bin-emu-cube-picolink bin-emu-diagnostics bin-emu-dma-probe bin-emu-graphics bin-emu-graphics-frames bin-emu-hello bin-emu-hello-trace bin-emu-interrupt-probe bin-emu-live-hello bin-emu-live-solve bin-emu-solve bin-emu-solve-lto bin-emu-solve-picolink bin-emu-thumb-probe bin-emu-vendor-startup-probe clean cube-link-compare emu-deterministic-tests emu-replay-manifest-check emu-vendor-probe font-cascadia gui-graphics gui-hello gui-solve picolink-regression sim-graphics sim-solve-fixed sim-solve-repl smoke
 
 all: $(HOST_SOLVE)
 
@@ -203,10 +210,10 @@ bin-emu-cube: $(BIN_EMU) $(BARE_CUBE_BIN)
 	$(BIN_EMU) $(BARE_CUBE_BIN) $(EMU_DIR)/bare_cube.png
 
 bin-emu-cube-picolink: $(BIN_EMU) $(BARE_CUBE_PICOLINK_BIN)
-	$(BIN_EMU) $(BARE_CUBE_PICOLINK_BIN) $(EMU_DIR)/bare_cube_picolink.png --frames=1 --max-steps=80000000
+	$(BIN_EMU) $(BARE_CUBE_PICOLINK_BIN) $(EMU_DIR)/bare_cube_picolink.png --symbols=$(BARE_CUBE_PICOLINK_MAP) --frames=1 --max-steps=80000000
 
 bin-emu-cube-lto-picolink: $(BIN_EMU) $(BARE_CUBE_LTO_PICOLINK_BIN)
-	$(BIN_EMU) $(BARE_CUBE_LTO_PICOLINK_BIN) $(EMU_DIR)/bare_cube_lto_picolink.png --frames=1 --max-steps=80000000
+	$(BIN_EMU) $(BARE_CUBE_LTO_PICOLINK_BIN) $(EMU_DIR)/bare_cube_lto_picolink.png --symbols=$(BARE_CUBE_LTO_PICOLINK_MAP) --frames=1 --max-steps=80000000
 
 cube-link-compare: $(BIN_EMU) $(BARE_CUBE_BIN) $(BARE_CUBE_PICOLINK_BIN)
 	wc -c $(BARE_CUBE_BIN) $(BARE_CUBE_PICOLINK_BIN)
@@ -221,6 +228,9 @@ bin-emu-solve: $(BIN_EMU) $(BARE_SOLVE_BIN)
 
 bin-emu-solve-lto: $(BIN_EMU) $(BARE_SOLVE_LTO_BIN)
 	$(BIN_EMU) $(BARE_SOLVE_LTO_BIN) $(EMU_DIR)/bare_solve_lto.png '6x-3=0\n\x04'
+
+bin-emu-solve-picolink: $(BIN_EMU) $(BARE_SOLVE_PICOLINK_BIN)
+	$(BIN_EMU) $(BARE_SOLVE_PICOLINK_BIN) $(EMU_DIR)/bare_solve_picolink.png '6x-3=0\n\x04' --symbols=$(BARE_SOLVE_PICOLINK_MAP)
 
 bin-emu-benchmark: $(BIN_EMU) $(BARE_BENCHMARK_BIN)
 	$(BIN_EMU) $(BARE_BENCHMARK_BIN) $(EMU_DIR)/bare_benchmark.png
@@ -257,6 +267,12 @@ emu-deterministic-tests: emu-replay-manifest-check $(BIN_EMU) $(BARE_HELLO_BIN) 
 	$(BIN_EMU) $(BARE_DMA_BIN) $(EMU_DIR)/test_dma.png --trace=$(EMU_DIR)/test_dma.trace --expect-hash=$(EMU_HASH_DMA)
 	$(BIN_EMU) $(BARE_THUMB_BIN) $(EMU_DIR)/test_thumb.png --expect-hash=$(EMU_HASH_THUMB)
 	$(BIN_EMU) $(BARE_VENDOR_STARTUP_BIN) $(EMU_DIR)/test_vendor_startup.png --trace=$(EMU_DIR)/test_vendor_startup.trace --trace-kinds=base,calls,unknown-mmio --expect-hash=$(EMU_HASH_VENDOR_STARTUP)
+
+picolink-regression: $(BIN_EMU) $(BARE_CUBE_BIN) $(BARE_CUBE_PICOLINK_BIN) $(BARE_CUBE_LTO_PICOLINK_BIN) $(BARE_SOLVE_BIN) $(BARE_SOLVE_PICOLINK_BIN)
+	$(BIN_EMU) $(BARE_CUBE_PICOLINK_BIN) $(EMU_DIR)/test_cube_picolink.png --symbols=$(BARE_CUBE_PICOLINK_MAP) --frames=1 --max-steps=80000000 --expect-hash=$(EMU_HASH_CUBE_PICOLINK)
+	$(BIN_EMU) $(BARE_CUBE_LTO_PICOLINK_BIN) $(EMU_DIR)/test_cube_lto_picolink.png --symbols=$(BARE_CUBE_LTO_PICOLINK_MAP) --frames=1 --max-steps=80000000 --expect-hash=$(EMU_HASH_CUBE_LTO_PICOLINK)
+	$(BIN_EMU) $(BARE_SOLVE_PICOLINK_BIN) $(EMU_DIR)/test_solve_picolink.png @$(EMU_SOLVE_REPLAY) --symbols=$(BARE_SOLVE_PICOLINK_MAP) --expect-hash=$(EMU_HASH_SOLVE_PICOLINK)
+	wc -c $(BARE_CUBE_BIN) $(BARE_CUBE_PICOLINK_BIN) $(BARE_CUBE_LTO_PICOLINK_BIN) $(BARE_SOLVE_BIN) $(BARE_SOLVE_PICOLINK_BIN)
 
 emu-vendor-probe: $(BIN_EMU) $(VENDOR_IMAGE_BINS)
 	mkdir -p $(EMU_VENDOR_DIR)
@@ -395,6 +411,15 @@ $(BARE_SOLVE_BIN): $(BARE_SOLVE_ELF)
 	od -An -tx4 -N8 $@
 
 bare-solve: $(BARE_SOLVE_BIN)
+
+$(BARE_SOLVE_PICOLINK_RELOC): $(BARE_SOLVE_OBJS)
+	$(BARE_CC) $(BARE_RELOC_LDFLAGS) $(BARE_SOLVE_OBJS) $(BARE_LDLIBS) -o $@
+
+$(BARE_SOLVE_PICOLINK_BIN): $(PICO_LINK) $(BARE_SOLVE_PICOLINK_RELOC)
+	$(PICO_LINK) --stats --map=$(BARE_SOLVE_PICOLINK_MAP) -o $@ $(BARE_SOLVE_PICOLINK_RELOC)
+	od -An -tx4 -N8 $@
+
+bare-solve-picolink: $(BARE_SOLVE_PICOLINK_BIN)
 
 $(BARE_SOLVE_LTO_ELF): $(BARE_SOLVE_LTO_OBJS) $(PICOCALC_BARE_SRC_DIR)/memmap_sd_rp2040.ld
 	$(BARE_CC) $(BARE_LTO_CFLAGS) $(BARE_LTO_LDFLAGS) $(BARE_SOLVE_LTO_OBJS) $(BARE_LDLIBS) -o $@

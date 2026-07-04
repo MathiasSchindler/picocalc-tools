@@ -41,6 +41,7 @@ The current implementation is a no-libc Linux host program. It uses `_start`, di
 - `.bss*` sections with RAM addresses and no emitted bytes
 - linker-provided symbols for startup code, including `__data_source`, `__data_start`, `__data_end`, `__bss_start`, `__bss_end`, `__text_start`, `__text_end`, `__StackTop`, and `__stack`
 - `R_ARM_ABS32` relocations
+- `R_ARM_REL32` relocations
 - `R_ARM_THM_CALL` relocations
 - weak symbol fallback to zero for unresolved weak references
 - profile-specific section reachability garbage collection rooted at `.vectors`
@@ -49,6 +50,7 @@ The current implementation is a no-libc Linux host program. It uses `_start`, di
 - optional reachability-ordered section layout for call-graph locality experiments
 - selective Unix `ar` archive input for small local runtime archives
 - GCC LTO handoff through `-flinker-output=nolto-rel` native relocatable objects
+- GCC relocatable runtime prelink handoff for larger firmware that still needs libgcc helper code
 - direct flat binary output
 
 The `bare-cube-picolink` target also links `src/picocalc/bare/aeabi_div.S` through `build/bare/libpico_runtime.a`, a small local ARM EABI division-helper archive, instead of asking `pico_link` to read all of `libgcc.a`. The unsigned core uses a normalized shift/subtract loop with early exits, and quotient-only calls have their own entry points so plain `/` does not need to compute the remainder path used by `/` plus `%`.
@@ -107,12 +109,33 @@ make bare-solve-lto
 make bin-emu-solve-lto
 ```
 
+The resulting `build/bare-lto/bare_solve_lto.bin` has been validated in the emulator and on a physical PicoCalc.
+
+Build and run the current `pico_link` solve firmware. This path uses GCC only for a relocatable prelink that pulls in the required libgcc helper objects; `pico_link` still performs the final PicoCalc memory layout and flat `.bin` emission:
+
+```
+make bare-solve-picolink
+make bin-emu-solve-picolink
+```
+
+The resulting `build/bare/bare_solve_picolink.bin` matches the normal solve framebuffer hash in the emulator.
+
 Build and run a hybrid LTO cube image. GCC first compiles the LTO program into a normal relocatable object with `-flinker-output=nolto-rel`; `pico_link` then maps that object to the final flat `.bin`:
 
 ```
 make bare-cube-lto-picolink
 make bin-emu-cube-lto-picolink
 ```
+
+The resulting `build/bare-lto/bare_cube_lto_picolink.bin` has been validated in the emulator and on a physical PicoCalc.
+
+Run the focused `pico_link` regression checks:
+
+```
+make picolink-regression
+```
+
+This builds the current custom-linked cube, hybrid LTO cube, and solve images, runs emulator hash checks, uses map-aware PC reporting, and prints image-size comparisons.
 
 Call `pico_link` directly:
 
@@ -151,13 +174,15 @@ The current `bare_cube_picolink.bin` is smaller than `bare_cube.bin` because it 
 
 This keeps `pico_link` dependency-free while still allowing GCC to perform cross-translation-unit optimization before the final PicoCalc-profile link-and-flatten step.
 
-Full GNU LTO also works for the solve firmware in the emulator when the freestanding memory-helper object is compiled without LTO. A full GNU LTO cube image builds and produces a smaller binary, but the current emulator does not complete its first-frame capture within the normal cube budget; the hybrid LTO object linked through `pico_link` does complete and matches the GNU cube framebuffer hash in the emulator.
+Full GNU LTO also works for the solve firmware when the freestanding memory-helper object is compiled without LTO; `bare_solve_lto.bin` has been validated in both the emulator and on hardware. A full GNU LTO cube image builds and produces a smaller binary, but the current emulator does not complete its first-frame capture within the normal cube budget; the hybrid LTO object linked through `pico_link` does complete, matches the GNU cube framebuffer hash in the emulator, and runs on hardware.
+
+The non-LTO `bare-solve-picolink` target currently uses a GCC `-r` handoff to pull in libgcc's soft-float, 64-bit arithmetic, and Thumb switch helpers before the final `pico_link` pass. That is a pragmatic replacement for GNU's final link step, not a fully local runtime yet. The next runtime-size step is to replace the remaining pulled helper objects with small PicoCalc-profile helpers or reduce solve's PicoCalc output path so it does not need soft-double formatting helpers.
 
 ## LIMITATIONS
 
 - only the PicoCalc SD-app memory profile is implemented
 - only ELF32 little-endian ARM relocatable inputs are accepted
-- only `R_ARM_ABS32` and `R_ARM_THM_CALL` relocations are supported
+- only `R_ARM_ABS32`, `R_ARM_REL32`, and `R_ARM_THM_CALL` relocations are supported
 - archive support is intentionally narrow: it reads ordinary Unix `ar` members by simple names and extracts only members satisfying unresolved globals
 - library search paths are not implemented, so archive paths must be passed explicitly
 - no linker script parser is implemented

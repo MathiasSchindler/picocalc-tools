@@ -27,6 +27,7 @@ typedef unsigned long long u64;
 #define STB_WEAK 2u
 #define STT_SECTION 3u
 #define R_ARM_ABS32 2u
+#define R_ARM_REL32 3u
 #define R_ARM_THM_CALL 10u
 
 #define FLASH_BASE 0x10000000u
@@ -143,6 +144,7 @@ static int g_live_section_count;
 static int g_discarded_section_count;
 static int g_relocation_count;
 static int g_relocation_abs32_count;
+static int g_relocation_rel32_count;
 static int g_relocation_thm_call_count;
 static int g_archive_member_count;
 static int g_gc_sections = 1;
@@ -808,6 +810,15 @@ static void apply_abs32(ObjectFile *object, InputSection *target_section, const 
     write32(location, symbol + addend);
 }
 
+static void apply_rel32(ObjectFile *object, InputSection *target_section, const Elf32Rel *relocation) {
+    u8 *location = g_output + target_section->output_offset + relocation->r_offset;
+    u32 symbol;
+    u32 addend = read32(location);
+    u32 place = target_section->vma + relocation->r_offset;
+    if (!symbol_value(object, rel_symbol_index(relocation), &symbol)) sys_exit(1);
+    write32(location, symbol + addend - place);
+}
+
 static void apply_thumb_call(ObjectFile *object, InputSection *target_section, const Elf32Rel *relocation) {
     u8 *location = g_output + target_section->output_offset + relocation->r_offset;
     u16 upper = read16(location);
@@ -842,6 +853,7 @@ static void apply_relocations(void) {
                 u32 type = rel_type(relocation);
                 g_relocation_count += 1;
                 if (type == R_ARM_ABS32) { g_relocation_abs32_count += 1; apply_abs32(object, target_section, relocation); }
+                else if (type == R_ARM_REL32) { g_relocation_rel32_count += 1; apply_rel32(object, target_section, relocation); }
                 else if (type == R_ARM_THM_CALL) { g_relocation_thm_call_count += 1; apply_thumb_call(object, target_section, relocation); }
                 else {
                     out("pico_link: unsupported relocation ");
@@ -961,6 +973,7 @@ static void print_stats(void) {
     out(" archive_members="); out_uint((u32)g_archive_member_count);
     out(" relocations="); out_uint((u32)g_relocation_count);
     out(" abs32="); out_uint((u32)g_relocation_abs32_count);
+    out(" rel32="); out_uint((u32)g_relocation_rel32_count);
     out(" thm_call="); out_uint((u32)g_relocation_thm_call_count);
     out(" image="); out_hex(g_output_size);
     out(" bss="); out_hex(g_bss_end - g_bss_start);

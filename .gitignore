@@ -1,9 +1,4 @@
 build/
-build-pico/
-build-lto/
-build-lto-mixed/
-build-lto-nomem/
-build-lto-lcdsafe/
 
 vendor/*
 !vendor/newos/
