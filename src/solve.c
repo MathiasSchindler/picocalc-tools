@@ -7,6 +7,9 @@
 #ifndef SOLVE_FROM_SOLVE_C
 #define SOLVE_FROM_SOLVE_C 1
 #endif
+#ifndef SOLVE_ENABLE_EXTENDED_MODES
+#define SOLVE_ENABLE_EXTENDED_MODES 1
+#endif
 
 #define SOLVE_EXPR_CAPACITY 2048U
 #define SOLVE_NAME_CAPACITY 32U
@@ -261,22 +264,23 @@ static void solve_emit_kv(const char *key, const char *value) {
     rt_write_line(1, value);
 }
 
-static void solve_emit_pair(const char *key, const char *value) {
-    if (tool_json_is_enabled()) {
-        if (tool_json_begin_event(1, "solve", "stdout", "solve_value") != 0) return;
-        rt_write_cstr(1, ",\"data\":{\"key\":");
-        tool_json_write_string(1, key);
-        rt_write_cstr(1, ",\"value\":");
-        tool_json_write_string(1, value != 0 ? value : "");
-        rt_write_char(1, '}');
-        tool_json_end_event(1);
-        return;
-    }
-    rt_write_cstr(1, key);
-    rt_write_cstr(1, ": ");
-    rt_write_line(1, value);
+#ifdef SOLVE_NO_STYLED_OUTPUT
+static int solve_sp_char(int fd, char ch) {
+    return rt_write_char(fd, ch);
 }
 
+static int solve_sp_cstr(int fd, const char *text) {
+    return rt_write_cstr(fd, text);
+}
+
+static int solve_sp_line(int fd, const char *text) {
+    return rt_write_line(fd, text);
+}
+
+static int solve_sp_uint(int fd, unsigned long long value) {
+    return rt_write_uint(fd, value);
+}
+#else
 static char g_solve_line[8192];
 static size_t g_solve_line_len = 0U;
 
@@ -355,6 +359,7 @@ static int solve_sp_uint(int fd, unsigned long long value) {
     while (n > 0U) solve_sp_char(1, digits[--n]);
     return 0;
 }
+#endif
 
 static int solve_is_bad(double value) {
     return value != value || value > SOLVE_HUGE || value < -SOLVE_HUGE;
@@ -1231,6 +1236,11 @@ int solve_main(int argc, char **argv) {
         options.have_scan = 1;
         options.default_scan = 1;
     }
+    if (solve_join_expression(opt.argi, argc, argv, expression, sizeof(expression)) != 0) {
+        tool_write_error("solve", "missing or too large expression", 0);
+        return 2;
+    }
+#if SOLVE_ENABLE_EXTENDED_MODES
     if (options.have_fit_exp_asymptote) {
         if (options.fit_points_spec[0] == '\0') {
             tool_write_error("solve", "--fit-exp-asymptote requires --points", 0);
@@ -1240,10 +1250,6 @@ int solve_main(int argc, char **argv) {
     }
     if (options.have_area) {
         return solve_run_area_mode(&options, opt.argi, argc, argv);
-    }
-    if (solve_join_expression(opt.argi, argc, argv, expression, sizeof(expression)) != 0) {
-        tool_write_error("solve", "missing or too large expression", 0);
-        return 2;
     }
     if (options.have_subst) {
         return solve_run_subst_mode(&options, expression);
@@ -1260,6 +1266,12 @@ int solve_main(int argc, char **argv) {
     if (options.have_asymptotes) {
         return solve_run_asymptotes_mode(&options, expression);
     }
+#else
+    if (options.have_fit_exp_asymptote || options.have_area || options.have_subst || options.have_eval || options.have_limit || options.have_volume || options.have_mean || options.have_asymptotes) {
+        tool_write_error("solve", "mode disabled in this build", 0);
+        return 2;
+    }
+#endif
     if (solve_parse_equation(expression, &equation) != 0) {
         tool_write_error("solve", "invalid equation", 0);
         return 2;
@@ -1277,6 +1289,7 @@ int solve_main(int argc, char **argv) {
         tool_write_error("solve", "--diff and --integrate cannot be combined", 0);
         return 2;
     }
+#if SOLVE_ENABLE_EXTENDED_MODES
     if (options.have_antiderivative) {
         return solve_run_antiderivative_mode(&equation, &options);
     }
@@ -1314,10 +1327,28 @@ int solve_main(int argc, char **argv) {
         return solve_run_inequality_mode(&equation, &options);
     }
     if (!options.quiet && !options.all && !options.report_y && options.default_scan && !options.have_bracket && rt_strcmp(options.method, "auto") == 0 && !equation.has_equation) {
+#ifdef SOLVE_NO_STYLED_OUTPUT
+        solve_sp_line(1, "overview");
+#else
         if (tool_json_is_enabled()) solve_sp_line(1, "overview");
         else tool_write_styled(1, tool_get_global_color_mode(), TOOL_STYLE_BOLD_CYAN, "overview\n");
+#endif
         return solve_run_discuss_mode(&equation, &options);
     }
+#else
+    if (options.have_antiderivative || options.have_monotonicity || options.have_curvature || options.have_tangent || options.have_normal || options.have_end_behavior || options.have_discuss || options.have_average_rate || options.have_maximum || options.have_minimum || options.have_integrate || options.have_diff) {
+        tool_write_error("solve", "mode disabled in this build", 0);
+        return 2;
+    }
+    if (equation.relation == SOLVE_RELATION_LT || equation.relation == SOLVE_RELATION_LE || equation.relation == SOLVE_RELATION_GT || equation.relation == SOLVE_RELATION_GE) {
+        tool_write_error("solve", "mode disabled in this build", 0);
+        return 2;
+    }
+    if (!options.quiet && !options.all && !options.report_y && options.default_scan && !options.have_bracket && rt_strcmp(options.method, "auto") == 0 && !equation.has_equation) {
+        tool_write_error("solve", "mode disabled in this build", 0);
+        return 2;
+    }
+#endif
 
     return solve_run_solver_equation(&equation, &options);
 }

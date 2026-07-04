@@ -116,6 +116,25 @@ make bare-solve
 
 This writes `build/bare/bare_solve.bin`, the file to copy to the PicoCalc SD card's `firmware/` directory for hardware testing.
 
+The custom dependency-free `pico_link` path links the same bare solve firmware directly from relocatable objects plus the local PicoCalc runtime archive:
+
+```sh
+make bare-solve-picolink
+make bin-emu-solve-picolink
+make picolink-regression
+```
+
+`bare-solve-picolink` writes `build/bare/bare_solve_picolink.bin` and validates with the same scripted solve framebuffer hash as the GNU-linked image. `picolink-regression` also checks map-file startup symbols and runs the cube, LTO cube, full solve, and optional core solve picolink images in the emulator.
+
+Two size-oriented solve profiles are available for experiments:
+
+```sh
+make bare-solve-core-picolink
+make bare-solve-core-1bpp-picolink
+```
+
+The core profile keeps ordinary equation solving but compiles out extended analysis modes such as area, tangent/normal, integration, differentiation, inequalities, and discuss-mode dispatch. The 1-bit profile uses the same core solve path with a generated non-antialiased font table. Current clean-regression sizes are `100320` bytes for full direct picolink solve, `50432` bytes for core picolink solve, and `46292` bytes for core picolink solve with the 1-bit font.
+
 The shared graphics test pattern exercises color order, gradients, clipping, checkerboard fills, text overlay, and a simple moving-box workload on hardware:
 
 ```sh
@@ -180,11 +199,12 @@ The emulator also has optional diagnostic and capture modes:
 make bin-emu-hello-trace
 make bin-emu-graphics-frames
 make emu-deterministic-tests
+make picolink-regression
 build/emu/bin_emu build/bare/bare_solve.bin build/emu/bare_solve.png @keys.txt
 build/emu/bin_emu build/bare/bare_solve.bin build/emu/bare_solve.png -
 ```
 
-`--trace=path` writes compact transaction-level logs for LCD commands, I2C operations, DMA activity, exception entry/return, and frame hashes. `--trace-kinds=base,calls,unknown-mmio,xip|all` can add indirect branch/Boot ROM helper traces, unmodeled MMIO diagnostics, and XIP SSI status/data-register diagnostics; `make emu-vendor-probe` enables those richer trace kinds. `--report-milestones` prints the first LCD command, first pixel write, and first nonblack pixel with PC/cycle context; the vendor probe enables it to quickly classify whether an image has reached display output. A key-script argument of `@path` replays keys from a file, while `-` reads live keys from nonblocking stdin. If the output image path contains `%d`, `--frames=N` writes numbered PNG frames such as `bare_graphics_frame_0.png` and `bare_graphics_frame_1.png`. If the output path ends in `.gif`, `--frames=N --gif-fps=N` writes a looping animated GIF directly from captured emulator frames, using a built-in RGB332 palette and no external encoder. `--flash-state=PATH` loads an existing 2 MiB emulated flash image when present, overlays the current input `.bin` at the PicoCalc SD-app offset, and saves the mutated flash buffer on exit or emulation failure; this is meant for vendor firmware that initializes or updates persistent flash metadata. `--expect-hash=HEX` verifies the final framebuffer hash and exits nonzero on drift; `make emu-deterministic-tests` uses that mode for hello, graphics, solve, interrupt, DMA, Thumb, and vendor-startup probe firmware. The replay manifest in `tests/emu_replays.tsv` records the binaries, key inputs, trace outputs, hash variables, and expected framebuffer hashes covered by that deterministic suite; `make emu-replay-manifest-check` verifies the manifest hashes against the Makefile.
+`--trace=path` writes compact transaction-level logs for LCD commands, I2C operations, DMA activity, exception entry/return, and frame hashes. `--trace-kinds=base,calls,unknown-mmio,xip|all` can add indirect branch/Boot ROM helper traces, unmodeled MMIO diagnostics, and XIP SSI status/data-register diagnostics; `make emu-vendor-probe` enables those richer trace kinds. `--report-milestones` prints the first LCD command, first pixel write, and first nonblack pixel with PC/cycle context; the vendor probe enables it to quickly classify whether an image has reached display output. A key-script argument of `@path` replays keys from a file, while `-` reads live keys from nonblocking stdin. If the output image path contains `%d`, `--frames=N` writes numbered PNG frames such as `bare_graphics_frame_0.png` and `bare_graphics_frame_1.png`. If the output path ends in `.gif`, `--frames=N --gif-fps=N` writes a looping animated GIF directly from captured emulator frames, using a built-in RGB332 palette and no external encoder. `--flash-state=PATH` loads an existing 2 MiB emulated flash image when present, overlays the current input `.bin` at the PicoCalc SD-app offset, and saves the mutated flash buffer on exit or emulation failure; this is meant for vendor firmware that initializes or updates persistent flash metadata. `--symbols=MAP` reads a `pico_link` map file and annotates emulator PC reports with nearest symbol names. `--expect-hash=HEX` verifies the final framebuffer hash and exits nonzero on drift; `make emu-deterministic-tests` uses that mode for hello, graphics, solve, interrupt, DMA, Thumb, and vendor-startup probe firmware, while `make picolink-regression` uses it for the custom-linked cube and solve images. The replay manifest in `tests/emu_replays.tsv` records the binaries, key inputs, trace outputs, hash variables, and expected framebuffer hashes covered by the deterministic suite; `make emu-replay-manifest-check` verifies the manifest hashes against the Makefile.
 
 Vendor PicoCalc SD-app images can be probed with:
 
@@ -192,7 +212,7 @@ Vendor PicoCalc SD-app images can be probed with:
 make emu-vendor-probe
 ```
 
-This runs the SD-app-style binaries in `vendor/images`, writes PNG/trace artifacts under `build/vendor-emu`, and keeps going after individual failures. It is an investigation target, not a passing compatibility suite yet. The current emulator gets those binaries through vector loading, early reset/clock setup, targeted Boot ROM helper lookup, SIO divider/spinlock setup, selected RAM helper paths, a low-flash boot2 return stub, a flash buffer rooted at `0x10000000`, erased-flash reads beyond the loaded `.bin`, optional persistent flash-state files, a deterministic XIP `0x4b` unique-ID response, emulated Boot ROM flash erase/program helpers, SPI APB aliases, 16-bit LCD pixel decoding, a minimal UART0 status path, hardware-calibrated raw timer reads, and conservative timer-wait acceleration. MP3 and PicoMite currently exit cleanly without LCD output; Lua reaches 6x8 RGB565 glyph-cell drawing before budgeting later in the application, but the emulator text is still not reliably readable while real hardware shows a black screen with white `Welcome to`, yellow `pico lua`, and a white `lua>` prompt; uLisp reaches the interactive prompt (`uLisp 4.8f`, `22280> _`); MicroPython still loops in a null storage/metadata path; NES still reaches a divider-wrapper null callback before LCD output. The emulator records LCD `INVON`/`INVOFF` state for traces, but does not invert PNG framebuffer pixels because the non-inverted PNG output matches the observed PicoCalc display.
+This runs the SD-app-style binaries in `vendor/images`, writes PNG/trace artifacts under `build/vendor-emu`, and keeps going after individual failures. It is an investigation target, not a passing compatibility suite yet. The current emulator gets those binaries through vector loading, early reset/clock setup, targeted Boot ROM helper lookup, SIO divider/spinlock setup, selected RAM helper paths, a low-flash boot2 return stub, a flash buffer rooted at `0x10000000`, erased-flash reads beyond the loaded `.bin`, optional persistent flash-state files, a deterministic XIP `0x4b` unique-ID response, emulated Boot ROM flash erase/program helpers, SPI APB aliases, 16-bit LCD pixel decoding, a minimal UART0 status path, hardware-calibrated raw timer reads, and conservative timer-wait acceleration. MP3 and PicoMite currently exit cleanly without LCD output; Lua reaches 6x8 RGB565 glyph-cell drawing before budgeting later near `0x1005ad68`, but the emulator text is still not reliably readable while real hardware shows a black screen with white `Welcome to`, yellow `pico lua`, and a white `lua>` prompt; uLisp reaches the interactive prompt (`uLisp 4.8f`, `22280> _`) and then budgets in the keyboard I2C transfer loop near `0x10044cd4`; MicroPython still loops in a null storage/metadata path near `0x10059ce8`; NES has moved past the earlier divider-wrapper null callback and now budgets later near `0x10032be2` before LCD output. The emulator records LCD `INVON`/`INVOFF` state for traces, but does not invert PNG framebuffer pixels because the non-inverted PNG output matches the observed PicoCalc display.
 
 For a terminal-hosted live view, run one of:
 
@@ -231,10 +251,11 @@ The Cascadia Mono TTF in `vendor/microsoft/cascadia/CascadiaMono.ttf` can be con
 
 ```sh
 make font-cascadia
+make font-cascadia-1bpp
 ```
 
-This uses the vendored NewOS fontrender copy in `vendor/newos/fontrender` on the host and writes `build/font/picocalc_cascadia_8x14.h` plus a preview image at `build/font/picocalc_cascadia_8x14.ppm`. The generated table stores 4-bit grayscale alpha values, two pixels per byte. The TTF renderer is not linked into PicoCalc firmware.
+This uses the vendored NewOS fontrender copy in `vendor/newos/fontrender` on the host. The default `font-cascadia` target writes `build/font/picocalc_cascadia_8x14.h` plus a preview image at `build/font/picocalc_cascadia_8x14.ppm`; that generated table stores 4-bit grayscale alpha values, two pixels per byte. `font-cascadia-1bpp` writes the same glyph set under `build/font-1bpp/` as a 1-bit table for compact firmware profiles. The TTF renderer is not linked into PicoCalc firmware.
 
-The bare and source-simulator LCD text renderers include that generated `8x14` alpha table and blend text pixels against the requested foreground/background colors. `make bare-graphics`, `make bare-solve`, and `make sim-graphics` generate the font header automatically when needed, so the PicoCalc firmware uses the compact alpha data only.
+The bare and source-simulator LCD text renderers include the generated `8x14` table and blend text pixels against the requested foreground/background colors. `make bare-graphics`, `make bare-solve`, and `make sim-graphics` generate the default font header automatically when needed. The optional `bare-solve-core-1bpp-picolink` profile builds the LCD renderer against the 1-bit table instead.
 
 The host/ARM-probe Makefile builds define `PICOCALC_SOLVE_PROVIDE_MEMOPS` so the local shim supplies `memcpy`, `memset`, `memmove`, and `memcmp`. The Pico SDK build leaves those to the SDK/newlib runtime.

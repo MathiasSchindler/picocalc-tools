@@ -420,12 +420,29 @@ static void mark_section_live(InputSection *input_section) {
     input_section->live_order = g_live_section_count++;
 }
 
+static GlobalSymbol *strong_global_replacing_weak(const char *name, ObjectFile *object, u32 symbol_index) {
+    for (int global_index = 0; global_index < g_global_count; ++global_index) {
+        GlobalSymbol *global = g_globals + global_index;
+        if (global->bind != STB_GLOBAL) continue;
+        if (!str_eq(name, global->name)) continue;
+        if (global->object == object && global->symbol_index == symbol_index) return 0;
+        return global;
+    }
+    return 0;
+}
+
 static InputSection *symbol_target_section(ObjectFile *object, u32 symbol_index) {
     const Elf32Sym *symbol;
     u32 value;
     if (symbol_index >= object->symbol_count) fail_path("bad relocation symbol", object->path);
     symbol = object->symbols + symbol_index;
-    if (symbol->st_shndx != SHN_UNDEF && symbol->st_shndx != SHN_ABS) return find_input_section(object, symbol->st_shndx);
+    if (symbol->st_shndx != SHN_UNDEF && symbol->st_shndx != SHN_ABS) {
+        if (elf_bind(symbol) == STB_WEAK) {
+            GlobalSymbol *global = strong_global_replacing_weak(object->symbol_names + symbol->st_name, object, symbol_index);
+            if (global != 0 && global->object != 0) return symbol_target_section(global->object, global->symbol_index);
+        }
+        return find_input_section(object, symbol->st_shndx);
+    }
     if (symbol->st_shndx == SHN_ABS) return 0;
     if (special_symbol_value(object->symbol_names + symbol->st_name, &value)) return 0;
     for (int global_index = 0; global_index < g_global_count; ++global_index) {
@@ -686,17 +703,24 @@ static int symbol_value(ObjectFile *object, u32 symbol_index, u32 *out_value) {
     const char *name;
     if (symbol_index >= object->symbol_count) fail_path("bad relocation symbol", object->path);
     symbol = object->symbols + symbol_index;
+    name = object->symbol_names + symbol->st_name;
     if (symbol->st_shndx == SHN_ABS) {
         *out_value = symbol->st_value;
         return 1;
     }
     if (symbol->st_shndx != SHN_UNDEF) {
+        if (elf_bind(symbol) == STB_WEAK) {
+            GlobalSymbol *global = strong_global_replacing_weak(name, object, symbol_index);
+            if (global != 0) {
+                *out_value = global->value;
+                return 1;
+            }
+        }
         input_section = find_input_section(object, symbol->st_shndx);
         if (input_section == 0) fail_path("symbol in discarded section", object->path);
         *out_value = input_section->vma + symbol->st_value;
         return 1;
     }
-    name = object->symbol_names + symbol->st_name;
     if (special_symbol_value(name, out_value)) return 1;
     for (int global_index = 0; global_index < g_global_count; ++global_index) {
         if (str_eq(name, g_globals[global_index].name)) {

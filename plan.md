@@ -13,6 +13,7 @@ make -C /home/mathias/pico2 gui-hello gui-graphics gui-solve
 make -C /home/mathias/pico2 bin-emu-hello-trace bin-emu-graphics-frames
 make -C /home/mathias/pico2 emu-replay-manifest-check
 make -C /home/mathias/pico2 emu-deterministic-tests
+make -C /home/mathias/pico2 picolink-regression
 make -C /home/mathias/pico2 emu-vendor-probe
 ```
 
@@ -22,6 +23,9 @@ Validated firmware paths:
 - `build/bare/bare_graphics.bin` produces `build/emu/bare_graphics.png`, numbered PNG frame captures, and `build/gui/bare_graphics_picocalc.png`.
 - `build/bare/bare_cube.bin` produces `build/emu/bare_cube.png` as a first-frame preview and `build/emu/bare_cube.gif` as an animated GIF capture of a fixed-point 3D cube with keyboard-controlled mode and speed, plus WASD fallback controls and last-key readout for hardware debugging. Real PicoCalc feedback showed working arrows and about 14 FPS across modes/speeds; the cube now uses a sine lookup table instead of the earlier shape-distorting smoothstep approximation.
 - `build/bare/bare_solve.bin` accepts scripted keyboard input `6x-3=0`, Enter, Ctrl-D and produces `build/emu/bare_solve.png` plus `build/gui/bare_solve_picocalc.png`.
+- `build/bare/bare_solve_picolink.bin` is linked directly by `pico_link`, accepts the same scripted solve replay, and produces the same equation-solving framebuffer hash as `bare_solve.bin`.
+- `build/bare/bare_solve_core_picolink.bin` keeps ordinary equation solving while compiling out extended analysis modes; it validates with the same solve replay hash and is currently about `50432` bytes.
+- `build/bare-1bpp/bare_solve_core_1bpp_picolink.bin` uses the same core solve profile with a generated 1-bit font; it has a distinct expected framebuffer hash and is currently about `46292` bytes.
 - `build/bare/bare_benchmark.bin` produces `build/emu/bare_benchmark.png` with one-screen timing results for hardware/emulator comparison.
 - `build/bare/bare_diagnostics.bin` produces `build/emu/bare_diagnostics.png` with one-screen software-observable hardware diagnostics.
 - `build/bare/bare_interrupt_probe.bin`, `build/bare/bare_dma_probe.bin`, `build/bare/bare_thumb_probe.bin`, and `build/bare/bare_vendor_startup_probe.bin` exercise focused exception, DMA, Thumb decoder, and vendor-startup paths.
@@ -47,6 +51,7 @@ Validated firmware paths:
 | Trace output | Fully implemented | `--trace` writes to stderr and `--trace=path` writes a compact transaction-level log. `--trace-kinds=base,calls,unknown-mmio,xip|all` enables optional indirect branch/Boot ROM, unknown-MMIO, and XIP SSI diagnostics for vendor investigation. Current base trace events include LCD commands, I2C operations, DMA activity, exception entry/return, reset writes, and frame hashes. Raw SPI pixel bytes are intentionally not logged. |
 | LCD milestone reporting | Fully implemented | `--report-milestones` prints first LCD command, first framebuffer pixel write, and first nonblack pixel with PC and cycle context. `make emu-vendor-probe` enables it so each vendor binary reports whether it has reached display output. |
 | Deterministic replay/hash tests | Fully implemented | `make emu-deterministic-tests` runs hello, graphics, solve replay from `tests/solve_replay.keys`, interrupt, DMA, Thumb, and vendor-startup probe firmware with `--expect-hash=...`, failing if the final framebuffer hash changes. `tests/emu_replays.tsv` records the covered binaries, replay inputs, traces, outputs, and expected hashes. |
+| Pico_link map-symbol reports | Fully implemented | `--symbols=MAP` reads `pico_link` map files and annotates frame-ready, budget, crash, and LCD-milestone PC reports with nearest symbol names. `make picolink-regression` passes maps for the custom-linked cube, LTO cube, full solve, core solve, and 1-bit core solve images. |
 | Focused interrupt probe firmware | Fully implemented | `src/picocalc/bare/interrupt_probe.c` verifies the minimal exception path with `SVC`, repeated `SysTick`, exception return, and NVIC IRQ0, and trace output records the entries/returns. |
 | Focused DMA probe firmware | Fully implemented | `src/picocalc/bare/dma_probe.c` transfers a generated RGB block to the LCD through DMA channel 0 writing SPI1 data MMIO, then verifies that path through deterministic hashes and DMA trace events. |
 | Focused Thumb probe firmware | Fully implemented | `src/picocalc/bare/thumb_probe.c` contains a small inline-assembly repro for the Cortex-M0+ `LDRH` immediate instruction, keeping decoder growth tied to a local firmware image. |
@@ -85,7 +90,7 @@ Validated firmware paths:
 | Vendor PicoCalc binary compatibility suite | Partially implemented | `make emu-vendor-probe` runs Lua, MicroPython, MP3 player, NES, PicoMite, and uLisp SD-app `.bin` files from `vendor/images` with bounded step counts, traces, LCD milestone reports, and PNG artifacts. Timer-wait acceleration keeps the hardware-calibrated `TIMERAWL` scale while preserving the non-inverted PNG output that matches the PicoCalc display: MP3 and PicoMite exit cleanly, Lua reaches 6x8 RGB565 glyph-cell writes and budgets later near `0x1005ad68` but still needs alignment against the real black/white/yellow Lua prompt screen, uLisp reaches the prompt (`uLisp 4.8f`, `22280> _`) and budgets in the keyboard I2C transfer loop near `0x10044cd4`, MicroPython loops in its null storage/metadata path near `0x10059ce8`, and NES has moved past its earlier divider-wrapper null callback to a later pre-LCD budget frontier near `0x10032be2`. The BIOS and keyboard `.bin` files under `vendor/PicoCalc/Bin` remain separate references with different vectors/load bases. |
 | Hardware keyboard matrix/controller emulation | Partially implemented | The high-level PicoCalc I2C keyboard report protocol is modeled from scripts/stdin. The internal keyboard MCU, modifier state machine, repeat timing, brightness controls, and full key-event behavior are not emulated. |
 | Live GUI keyboard mapping | Partially implemented | Terminal stdin bytes can feed the existing keyboard path in live mode, but there is no graphical keyboard event mapping yet. |
-| Deterministic replay bundle | Partially implemented | Hash-verified Make targets, a solve replay file, `tests/emu_replays.tsv`, and `make emu-replay-manifest-check` now exist. The manifest records binary paths, key inputs, trace outputs, Makefile hash variables, and expected frame hashes, but it is not yet a self-contained archived replay bundle with binary identity hashes and timing controls. |
+| Deterministic replay bundle | Partially implemented | Hash-verified Make targets, picolink regression targets, a solve replay file, `tests/emu_replays.tsv`, and `make emu-replay-manifest-check` now exist. The manifest records binary paths, key inputs, trace outputs, Makefile hash variables, and expected frame hashes, but it is not yet a self-contained archived replay bundle with binary identity hashes and timing controls. |
 
 ## Not Yet Implemented Emulator Features
 

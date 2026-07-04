@@ -271,6 +271,8 @@ u64 __aeabi_dmul(u64 left_bits, u64 right_bits) {
     if ((left.is_inf && right.is_zero) || (right.is_inf && left.is_zero)) return d_quiet_nan();
     if (left.is_inf || right.is_inf) return d_inf_bits(sign);
     if (left.is_zero || right.is_zero) return d_zero_bits(sign);
+    if (left.mant == D_MANT_TOP) return pack_rounded(sign, left.exp + right.exp, right.mant << 3);
+    if (right.mant == D_MANT_TOP) return pack_rounded(sign, left.exp + right.exp, left.mant << 3);
     product = mul_u64_53(left.mant, right.mant);
     bit = u128_high_bit(product);
     exp = left.exp + right.exp + bit - 104;
@@ -293,6 +295,7 @@ u64 __aeabi_ddiv(u64 left_bits, u64 right_bits) {
     if (right.is_inf) return d_zero_bits(sign);
     if (right.is_zero) return d_inf_bits(sign);
     if (left.is_zero) return d_zero_bits(sign);
+    if (right.mant == D_MANT_TOP) return pack_rounded(sign, left.exp - right.exp, left.mant << 3);
     exp = left.exp - right.exp;
     shift = 55;
     if (left.mant < right.mant) {

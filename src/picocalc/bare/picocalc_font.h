@@ -6,6 +6,7 @@
 #define PICOCALC_FONT_CELL_W PICOCALC_CASCADIA_WIDTH
 #define PICOCALC_FONT_CELL_H PICOCALC_CASCADIA_HEIGHT
 #define PICOCALC_FONT_ROW_BYTES PICOCALC_CASCADIA_ROW_BYTES
+#define PICOCALC_FONT_BPP PICOCALC_CASCADIA_BPP
 
 static const unsigned char *picocalc_font_glyph(char ch) {
     unsigned int code = (unsigned char)ch;
@@ -16,9 +17,14 @@ static const unsigned char *picocalc_font_glyph(char ch) {
 }
 
 static unsigned int picocalc_font_alpha(const unsigned char *glyph, int row, int col) {
+#if PICOCALC_FONT_BPP == 1
+    unsigned char packed = glyph[row * PICOCALC_FONT_ROW_BYTES + (col >> 3)];
+    return (packed & (unsigned char)(0x80u >> (col & 7))) != 0 ? 15u : 0u;
+#else
     unsigned char packed = glyph[row * PICOCALC_FONT_ROW_BYTES + (col >> 1)];
     if ((col & 1) == 0) return (unsigned int)(packed >> 4);
     return (unsigned int)(packed & 15u);
+#endif
 }
 
 #endif

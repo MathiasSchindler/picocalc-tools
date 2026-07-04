@@ -99,6 +99,22 @@ Run the local ARM EABI double conversion, comparison, and arithmetic helper prob
 make bin-emu-aeabi-double-probe
 ```
 
+Run the optional feature-sliced PicoCalc solve image:
+
+```
+make bin-emu-solve-core-picolink
+```
+
+This image is useful for size experiments; it keeps the equation-solving replay hash but reports disabled-mode errors for extended solve modes.
+
+Run the compact-font variant of that image:
+
+```
+make bin-emu-solve-core-1bpp-picolink
+```
+
+This uses the same equation-solving replay but expects a distinct framebuffer hash because the generated font is 1-bit instead of antialiased 4-bit alpha.
+
 Capture the cube demo as an animated GIF:
 
 ```

@@ -233,20 +233,46 @@ static unsigned int blend_color(unsigned int fg, unsigned int bg, unsigned int a
 
 static void lcd_draw_char(int x, int y, char ch, unsigned int fg, unsigned int bg, int scale) {
     const unsigned char *glyph = picocalc_font_glyph(ch);
-    int row;
-    int col;
+    uint8_t line[LCD_WIDTH * 3];
+    int cell_w;
+    int cell_h;
+    int x1;
+    int y1;
+    int x2;
+    int y2;
+    int py;
     if (scale < 1) scale = 1;
-    lcd_fill_rect(x, y, x + PICOCALC_FONT_CELL_W * scale - 1, y + PICOCALC_FONT_CELL_H * scale - 1, bg);
-    for (row = 0; row < PICOCALC_FONT_CELL_H; ++row) {
-        for (col = 0; col < PICOCALC_FONT_CELL_W; ++col) {
+    cell_w = PICOCALC_FONT_CELL_W * scale;
+    cell_h = PICOCALC_FONT_CELL_H * scale;
+    x1 = x;
+    y1 = y;
+    x2 = x + cell_w - 1;
+    y2 = y + cell_h - 1;
+    if (x1 < 0) x1 = 0;
+    if (y1 < 0) y1 = 0;
+    if (x2 >= LCD_WIDTH) x2 = LCD_WIDTH - 1;
+    if (y2 >= LCD_HEIGHT) y2 = LCD_HEIGHT - 1;
+    if (x2 < x1 || y2 < y1) return;
+
+    lcd_set_window(x1, y1, x2, y2);
+    gpio_put(LCD_DC, 1);
+    gpio_put(LCD_CS, 0);
+    for (py = y1; py <= y2; ++py) {
+        int row = (py - y) / scale;
+        int px;
+        int out = 0;
+        for (px = x1; px <= x2; ++px) {
+            int col = (px - x) / scale;
             unsigned int alpha = picocalc_font_alpha(glyph, row, col);
-            if (alpha != 0u) {
-                int px = x + col * scale;
-                int py = y + row * scale;
-                lcd_fill_rect(px, py, px + scale - 1, py + scale - 1, blend_color(fg, bg, alpha));
-            }
+            unsigned int rgb = blend_color(fg, bg, alpha);
+            line[out++] = (uint8_t)(rgb >> 16);
+            line[out++] = (uint8_t)(rgb >> 8);
+            line[out++] = (uint8_t)rgb;
         }
+        spi_write(line, (size_t)out);
     }
+    spi_finish();
+    gpio_put(LCD_CS, 1);
 }
 
 void picocalc_lcd_puts(int x, int y, const char *text, unsigned int fg, unsigned int bg) {

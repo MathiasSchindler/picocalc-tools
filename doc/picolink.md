@@ -114,7 +114,7 @@ make bin-emu-solve-lto
 
 The resulting `build/bare-lto/bare_solve_lto.bin` has been validated in the emulator and on a physical PicoCalc.
 
-Build and run the current `pico_link` solve firmware. This path uses GCC for a relocatable prelink, while `pico_link` still performs the final PicoCalc memory layout and flat `.bin` emission:
+Build and run the current `pico_link` solve firmware. This path passes the bare solve objects and local runtime archive directly to `pico_link`; no GNU final link or GCC `-r` handoff is needed for the non-LTO solve image:
 
 ```
 make bare-solve-picolink
@@ -122,6 +122,24 @@ make bin-emu-solve-picolink
 ```
 
 The resulting `build/bare/bare_solve_picolink.bin` matches the normal solve framebuffer hash in the emulator.
+
+Build and run the optional core solve image, which keeps ordinary equation solving but compiles out extended analysis modes such as area, tangent/normal, integration, differentiation, inequalities, and discuss-mode dispatch:
+
+```
+make bare-solve-core-picolink
+make bin-emu-solve-core-picolink
+```
+
+This target is intended as a size comparison and product-profile experiment, not as a replacement for the full solve firmware.
+
+Build the same core profile with a generated 1-bit Cascadia font table:
+
+```
+make bare-solve-core-1bpp-picolink
+make bin-emu-solve-core-1bpp-picolink
+```
+
+This target trades antialiasing quality for several kilobytes of flash savings. The default firmware continues to use the 4-bit font table.
 
 Build and run a hybrid LTO cube image. GCC first compiles the LTO program into a normal relocatable object with `-flinker-output=nolto-rel`; `pico_link` then maps that object to the final flat `.bin`:
 
@@ -140,7 +158,7 @@ make picolink-regression
 
 This builds the current custom-linked cube, hybrid LTO cube, and solve images, runs emulator hash checks, uses map-aware PC reporting, and prints image-size comparisons.
 
-The regression also checks each `pico_link` map with `tests/check_picolink_symbols.awk`, ensuring the synthetic startup symbols are present, unique, inside the PicoCalc profile ranges, and consistent with the emitted image size.
+The regression also checks each `pico_link` map with `tests/check_picolink_symbols.awk`, ensuring the synthetic startup symbols are present, unique, inside the PicoCalc profile ranges, and consistent with the emitted image size. The optional core solve image is included in this regression so its smaller feature profile keeps the same equation-solving replay hash.
 
 Run the local double-helper probe:
 
@@ -189,7 +207,7 @@ This keeps `pico_link` dependency-free while still allowing GCC to perform cross
 
 Full GNU LTO also works for the solve firmware when the freestanding memory-helper object is compiled without LTO; `bare_solve_lto.bin` has been validated in both the emulator and on hardware. A full GNU LTO cube image builds and produces a smaller binary, but the current emulator does not complete its first-frame capture within the normal cube budget; the hybrid LTO object linked through `pico_link` does complete, matches the GNU cube framebuffer hash in the emulator, and runs on hardware.
 
-The non-LTO `bare-solve-picolink` target currently uses a GCC `-r` handoff to merge the firmware objects before the final `pico_link` pass. Integer division, 64-bit integer arithmetic, Thumb switch helpers, and double conversion/comparison/arithmetic helpers are supplied by the local PicoCalc runtime archive. That is a pragmatic replacement for GNU's final link step, not a general-purpose linker yet. The next runtime-size step is to continue trimming helper implementations against PicoCalc workloads and to reduce solve's output path where normal C semantics allow it.
+The non-LTO `bare-solve-picolink` target now links directly through `pico_link`. Integer division, 64-bit integer arithmetic, Thumb switch helpers, and double conversion/comparison/arithmetic helpers are supplied by the local PicoCalc runtime archive. `pico_link` remains profile-specific rather than a general-purpose linker. Size-oriented profile work should compare full solve, core solve, 1-bit font quality, and UI speed before removing any user-visible solve feature from the default image.
 
 ## LIMITATIONS
 

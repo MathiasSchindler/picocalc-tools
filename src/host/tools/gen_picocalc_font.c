@@ -16,6 +16,7 @@
 #define GLYPH_COUNT (LAST_GLYPH - FIRST_GLYPH + 1)
 
 static unsigned char g_alpha[GLYPH_COUNT][CELL_H][CELL_ROW_BYTES];
+static int g_output_bpp = 4;
 
 static void *host_alloc(void *user_data, size_t size) {
     (void)user_data;
@@ -131,6 +132,11 @@ static void put_pixel(unsigned char *ppm, int width, int x, int y, unsigned char
     ppm[off + 2] = value;
 }
 
+static unsigned int output_alpha_value(unsigned int alpha) {
+    if (g_output_bpp == 1) return alpha >= 8u ? 15u : 0u;
+    return alpha;
+}
+
 static void emit_preview(const char *path) {
     enum { SCALE = 4, COLS = 19, ROWS = 5, PAD = 2 };
     int width = COLS * (CELL_W + PAD) * SCALE;
@@ -149,6 +155,7 @@ static void emit_preview(const char *path) {
             for (col = 0; col < CELL_W; ++col) {
                 unsigned char packed = g_alpha[glyph][row][col >> 1];
                 unsigned char alpha = (col & 1) == 0 ? (unsigned char)(packed >> 4) : (unsigned char)(packed & 15u);
+                alpha = (unsigned char)output_alpha_value(alpha);
                 unsigned char value = (unsigned char)(24u + (unsigned int)alpha * 206u / 15u);
                 int px0 = (gx * (CELL_W + PAD) + col) * SCALE;
                 int py0 = (gy * (CELL_H + PAD) + row) * SCALE;
@@ -206,9 +213,35 @@ static void render_font(FrFont *font) {
     }
 }
 
+static int font_row_bytes(void) {
+    return (CELL_W * g_output_bpp + 7) / 8;
+}
+
+static unsigned int alpha_for_header(unsigned int alpha) {
+    if (g_output_bpp == 1) return output_alpha_value(alpha) != 0u ? 1u : 0u;
+    return alpha;
+}
+
+static unsigned char packed_header_byte(int glyph, int row, int byte) {
+    unsigned int value = 0;
+    int bit;
+    for (bit = 0; bit < 8; bit += g_output_bpp) {
+        int col = (byte * 8 + bit) / g_output_bpp;
+        unsigned int alpha = 0;
+        if (col < CELL_W) {
+            unsigned char packed = g_alpha[glyph][row][col >> 1];
+            alpha = (col & 1) == 0 ? (unsigned int)(packed >> 4) : (unsigned int)(packed & 15u);
+            alpha = alpha_for_header(alpha);
+        }
+        value |= alpha << (8 - g_output_bpp - bit);
+    }
+    return (unsigned char)value;
+}
+
 static int write_header(const char *path) {
     FILE *file = fopen(path, "w");
     int glyph;
+    int row_bytes = font_row_bytes();
     if (file == NULL) return -1;
     fprintf(file, "#ifndef PICOCALC_CASCADIA_8X14_H\n");
     fprintf(file, "#define PICOCALC_CASCADIA_8X14_H\n\n");
@@ -216,17 +249,17 @@ static int write_header(const char *path) {
     fprintf(file, "#define PICOCALC_CASCADIA_LAST 126\n");
     fprintf(file, "#define PICOCALC_CASCADIA_WIDTH 8\n");
     fprintf(file, "#define PICOCALC_CASCADIA_HEIGHT 14\n\n");
-    fprintf(file, "#define PICOCALC_CASCADIA_ROW_BYTES 4\n");
-    fprintf(file, "#define PICOCALC_CASCADIA_BPP 4\n\n");
-    fprintf(file, "static const unsigned char picocalc_cascadia_8x14[%d][%d][%d] = {\n", GLYPH_COUNT, CELL_H, CELL_ROW_BYTES);
+    fprintf(file, "#define PICOCALC_CASCADIA_ROW_BYTES %d\n", row_bytes);
+    fprintf(file, "#define PICOCALC_CASCADIA_BPP %d\n\n", g_output_bpp);
+    fprintf(file, "static const unsigned char picocalc_cascadia_8x14[%d][%d][%d] = {\n", GLYPH_COUNT, CELL_H, row_bytes);
     for (glyph = 0; glyph < GLYPH_COUNT; ++glyph) {
         int row;
         fprintf(file, "    {\n");
         for (row = 0; row < CELL_H; ++row) {
             int byte;
             fprintf(file, "        {");
-            for (byte = 0; byte < CELL_ROW_BYTES; ++byte) {
-                fprintf(file, "0x%02x%s", g_alpha[glyph][row][byte], byte + 1 == CELL_ROW_BYTES ? "" : ", ");
+            for (byte = 0; byte < row_bytes; ++byte) {
+                fprintf(file, "0x%02x%s", packed_header_byte(glyph, row, byte), byte + 1 == row_bytes ? "" : ", ");
             }
             fprintf(file, "}%s\n", row + 1 == CELL_H ? "" : ",");
         }
@@ -242,6 +275,13 @@ int main(int argc, char **argv) {
     const char *font_path = argc > 1 ? argv[1] : "vendor/microsoft/cascadia/CascadiaMono.ttf";
     const char *header_path = argc > 2 ? argv[2] : "build/font/picocalc_cascadia_8x14.h";
     const char *preview_path = argc > 3 ? argv[3] : "build/font/picocalc_cascadia_8x14.ppm";
+    if (argc > 4) {
+        g_output_bpp = atoi(argv[4]);
+        if (g_output_bpp != 1 && g_output_bpp != 4) {
+            fprintf(stderr, "unsupported font bpp: %s\n", argv[4]);
+            return 1;
+        }
+    }
     if (install_platform() != 0) {
         fprintf(stderr, "failed to install fontrender platform\n");
         return 1;
