@@ -5,6 +5,8 @@
 
 typedef struct {
     u32 (*read32)(void *ctx, u32 addr);
+    void (*write8)(void *ctx, u32 addr, u32 value);
+    void (*write16)(void *ctx, u32 addr, u32 value);
     void (*write32)(void *ctx, u32 addr, u32 value);
 } EmuMemMmioOps;
 

@@ -32,7 +32,7 @@ The emulator is a no-libc Linux host program. It uses `_start`, direct syscalls,
 - loads flat PicoCalc/RP2040 `.bin` images at the SD-app firmware address
 - maps the firmware flash image, RAM, Boot2 stub reads, and targeted Boot ROM table/helper behavior
 - interprets the ARMv6-M Thumb instructions used by current local firmware and staged vendor probes
-- models enough reset, clock, timer, SIO, SysTick, NVIC, exception, DMA, SPI, I2C, UART, RTC, XIP SSI, LCD, and keyboard behavior for the active test cases
+- models enough reset, clock, timer, SIO, SysTick, NVIC, exception, DMA, SPI, I2C, UART, RTC, PIO status, XIP SSI, LCD, and keyboard behavior for the active test cases
 - decodes PicoCalc LCD command/data traffic into a 320x320 RGB framebuffer
 - writes PNG output by default when the output path ends in `.png`
 - writes PPM output only when the output path explicitly ends in `.ppm`

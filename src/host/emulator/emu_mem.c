@@ -75,7 +75,7 @@ void emu_mem_write16(EmuState *emu, const EmuMemMmioOps *mmio, void *mmio_ctx, u
         emu->ram[off + 1u] = (u8)(value >> 8);
         return;
     }
-    mmio->write32(mmio_ctx, addr, value & 0xffffu);
+    mmio->write16(mmio_ctx, addr, value & 0xffffu);
 }
 
 void emu_mem_write8(EmuState *emu, const EmuMemMmioOps *mmio, void *mmio_ctx, u32 addr, u32 value) {
@@ -84,7 +84,7 @@ void emu_mem_write8(EmuState *emu, const EmuMemMmioOps *mmio, void *mmio_ctx, u3
         emu->ram[off] = (u8)value;
         return;
     }
-    mmio->write32(mmio_ctx, addr, value & 0xffu);
+    mmio->write8(mmio_ctx, addr, value & 0xffu);
 }
 
 void emu_mem_flash_fill_erased(EmuState *emu) {

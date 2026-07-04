@@ -53,6 +53,9 @@ typedef struct {
 #ifndef UART_SIZE
 #define UART_SIZE              0x00001000u
 #endif
+#ifndef PIO_SIZE
+#define PIO_SIZE               0x00001000u
+#endif
 #ifndef LIVE_COLS
 #define LIVE_COLS 80
 #endif
@@ -214,6 +217,8 @@ typedef struct {
     u32 pll_usb[PLL_SIZE / 4u];
     u32 rtc[RTC_SIZE / 4u];
     u32 uart0[UART_SIZE / 4u];
+    u32 pio0[PIO_SIZE / 4u];
+    u32 pio1[PIO_SIZE / 4u];
     u32 xip_dr0_command;
     u32 xip_dr0_reads;
     Lcd lcd;

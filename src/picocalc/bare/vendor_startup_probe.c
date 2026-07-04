@@ -13,6 +13,13 @@
 #define RTC_CTRL REG32(0x4005c00cu)
 #define I2C_IC_ENABLE_STATUS REG32(I2C1_BASE + 0x9cu)
 #define XIP_SSI_SR REG32(0x18000028u)
+#define PIO0_FSTAT REG32(0x50200004u)
+#define PIO0_FDEBUG REG32(0x50200008u)
+#define PIO0_TXF0 REG32(0x50200010u)
+#define PIO_FSTAT_RXEMPTY_MASK 0x00000f00u
+#define PIO_FSTAT_TXEMPTY_MASK 0x0f000000u
+#define PIO_FSTAT_TXFULL0 (1u << 16)
+#define PIO_FDEBUG_TXSTALL0 (1u << 24)
 
 typedef uint32_t (*rom_lookup_fn)(uint32_t table, uint32_t code);
 typedef uint32_t (*rom_word_fn)(uint32_t value);
@@ -121,6 +128,13 @@ static uint32_t spi0_probe(void) {
     return (SPI0_SSPSR & (SPI_SR_TFE | SPI_SR_TNF)) == (SPI_SR_TFE | SPI_SR_TNF);
 }
 
+static uint32_t pio_probe(void) {
+    PIO0_TXF0 = 0x12345678u;
+    PIO0_FDEBUG = PIO_FDEBUG_TXSTALL0;
+    return (PIO0_FSTAT & (PIO_FSTAT_RXEMPTY_MASK | PIO_FSTAT_TXEMPTY_MASK | PIO_FSTAT_TXFULL0)) ==
+        (PIO_FSTAT_RXEMPTY_MASK | PIO_FSTAT_TXEMPTY_MASK) && (PIO0_FDEBUG & PIO_FDEBUG_TXSTALL0) != 0u;
+}
+
 static uint32_t mmio_status_probe(void) {
     uint32_t timer0 = TIMERAWL;
     uint32_t timer1 = TIMERAWL;
@@ -140,6 +154,7 @@ void bare_main(void) {
     if (!sio_probe()) ok = 0u;
     if (!rtc_probe()) ok = 0u;
     if (!spi0_probe()) ok = 0u;
+    if (!pio_probe()) ok = 0u;
     if (!mmio_status_probe()) ok = 0u;
 
     picocalc_lcd_fill_rect(18, 40, 301, 232, ok ? 0x003824u : 0x401000u);

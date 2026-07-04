@@ -113,6 +113,14 @@
 #define UART_FR_RXFE           (1u << 4)
 #define UART_FR_TXFE           (1u << 7)
 
+#define PIO0_BASE              0x50200000u
+#define PIO1_BASE              0x50300000u
+#define PIO_SIZE               0x00001000u
+#define PIO_FSTAT_OFF          0x04u
+#define PIO_FDEBUG_OFF         0x08u
+#define PIO_FSTAT_RXEMPTY_MASK 0x00000f00u
+#define PIO_FSTAT_TXEMPTY_MASK 0x0f000000u
+
 #define DMA_BASE               0x50000000u
 #define DMA_CH_STRIDE          0x40u
 #define DMA_READ_ADDR          0x00u
@@ -276,6 +284,8 @@ static usize g_symbol_name_used;
 #define g_pll_usb g_emu.pll_usb
 #define g_rtc g_emu.rtc
 #define g_uart0 g_emu.uart0
+#define g_pio0 g_emu.pio0
+#define g_pio1 g_emu.pio1
 #define g_xip_dr0_command g_emu.xip_dr0_command
 #define g_xip_dr0_reads g_emu.xip_dr0_reads
 #define g_lcd g_emu.lcd
@@ -318,6 +328,8 @@ static usize g_symbol_name_used;
 #define flash_fill_erased() emu_mem_flash_fill_erased(&g_emu)
 
 static u32 mem_mmio_read32(void *ctx, u32 addr);
+static void mem_mmio_write8(void *ctx, u32 addr, u32 value);
+static void mem_mmio_write16(void *ctx, u32 addr, u32 value);
 static void mem_mmio_write32(void *ctx, u32 addr, u32 value);
 static u8 bootrom_mem_read8(void *ctx, u32 addr);
 static u32 bootrom_mem_read32(void *ctx, u32 addr);
@@ -326,6 +338,8 @@ static void bootrom_mem_write32(void *ctx, u32 addr, u32 value);
 
 static const EmuMemMmioOps g_mem_mmio_ops = {
     mem_mmio_read32,
+    mem_mmio_write8,
+    mem_mmio_write16,
     mem_mmio_write32
 };
 
@@ -771,6 +785,10 @@ static u32 timer_us_low(void) {
     return g_cycles / TIMER_CYCLES_PER_US;
 }
 
+static u32 timer_us_high(void) {
+    return 0u;
+}
+
 static void spi_rx_push(u8 byte) {
     if (g_spi.rx_count < SPI_FIFO_SIZE) {
         g_spi.rx[(g_spi.rx_head + g_spi.rx_count) & (SPI_FIFO_SIZE - 1)] = byte;
@@ -935,12 +953,53 @@ static int dma_write32(u32 addr, u32 value) {
     return 1;
 }
 
+static int pio_read32(u32 addr, u32 *out_value) {
+    u32 base;
+    u32 *bank;
+    u32 off;
+    if (addr >= PIO0_BASE && addr < PIO0_BASE + PIO_SIZE) {
+        base = PIO0_BASE;
+        bank = g_pio0;
+    } else if (addr >= PIO1_BASE && addr < PIO1_BASE + PIO_SIZE) {
+        base = PIO1_BASE;
+        bank = g_pio1;
+    } else {
+        return 0;
+    }
+    off = addr - base;
+    if (off == PIO_FSTAT_OFF) {
+        *out_value = PIO_FSTAT_RXEMPTY_MASK | PIO_FSTAT_TXEMPTY_MASK;
+        return 1;
+    }
+    *out_value = bank[off >> 2];
+    return 1;
+}
+
+static int pio_write32(u32 addr, u32 value) {
+    u32 base;
+    u32 *bank;
+    u32 off;
+    if (addr >= PIO0_BASE && addr < PIO0_BASE + PIO_SIZE) {
+        base = PIO0_BASE;
+        bank = g_pio0;
+    } else if (addr >= PIO1_BASE && addr < PIO1_BASE + PIO_SIZE) {
+        base = PIO1_BASE;
+        bank = g_pio1;
+    } else {
+        return 0;
+    }
+    off = addr - base;
+    bank[off >> 2] = value;
+    return 1;
+}
+
 static u32 mmio_read32(u32 addr) {
     u32 value;
     u32 spi_reg;
     u32 spi_alias;
     u32 i2c_addr = I2C1_BASE + ((addr - I2C1_BASE) & 0x0fffu);
     if (dma_read32(addr, &value)) return value;
+    if (pio_read32(addr, &value)) return value;
     if (clock_read32(addr, &value)) return value;
     if (register_bank_read(addr, IO_BANK0_BASE, IO_BANK0_SIZE, g_io_bank0, &value)) return value;
     if (register_bank_read(addr, PADS_BANK0_BASE, PADS_BANK0_SIZE, g_pads_bank0, &value)) return value;
@@ -955,7 +1014,7 @@ static u32 mmio_read32(u32 addr) {
     if (addr == PPB_NVIC_ISPR) return g_core.nvic_pending;
     if (addr == PPB_SCB_ICSR) return g_core.icsr | (g_core.nvic_pending != 0u ? (1u << 22) : 0u);
     if (addr == PPB_SCB_VTOR) return g_core.vtor;
-    if (addr == TIMERAWH) return 0u;
+    if (addr == TIMERAWH) return timer_us_high();
     if (addr == TIMERAWL) return timer_us_low();
     if (addr == XIP_SSI_SR) { trace_xip_mmio("xipr", addr, 0x0eu); return 0x0eu; }
     if (addr == XIP_SSI_DR0) return xip_dr0_read();
@@ -1035,12 +1094,13 @@ static void sio_div_update(void) {
     }
 }
 
-static void mmio_write32(u32 addr, u32 value) {
+static void mmio_write(u32 addr, u32 value, u32 width) {
     u32 spi_reg;
     u32 spi_alias;
     u32 i2c_alias = (addr - I2C1_BASE) & 0x3000u;
     u32 i2c_addr = I2C1_BASE + ((addr - I2C1_BASE) & 0x0fffu);
     if (dma_write32(addr, value)) return;
+    if (pio_write32(addr, value)) return;
     if (clock_write32(addr, value)) { trace_mmio("clkw", addr, value); return; }
     if (register_bank_write(addr, value, IO_BANK0_BASE, IO_BANK0_SIZE, g_io_bank0)) return;
     if (register_bank_write(addr, value, PADS_BANK0_BASE, PADS_BANK0_SIZE, g_pads_bank0)) return;
@@ -1083,7 +1143,15 @@ static void mmio_write32(u32 addr, u32 value) {
         if (spi_reg == SPI_SSPCPSR_OFF) { g_spi.cpsr = atomic_alias_value(g_spi.cpsr, value, spi_alias); return; }
         if (spi_reg == SPI_SSPDMACR_OFF) { g_spi.dmacr = atomic_alias_value(g_spi.dmacr, value, spi_alias); return; }
         if (spi_reg == SPI_SSPICR_OFF) { g_spi.overrun = 0; return; }
-        if (spi_reg == SPI_SSPDR_OFF) { spi_write_data((u8)value); return; }
+        if (spi_reg == SPI_SSPDR_OFF) {
+            if (width == 2u) {
+                spi_write_data((u8)(value >> 8));
+                spi_write_data((u8)value);
+            } else {
+                spi_write_data((u8)value);
+            }
+            return;
+        }
     }
     if (register_bank_write(addr, value, UART0_BASE, UART_SIZE, g_uart0)) return;
     if (addr >= I2C1_BASE && addr < I2C1_BASE + 0x4000u) addr = i2c_addr;
@@ -1131,6 +1199,18 @@ static void mmio_write32(u32 addr, u32 value) {
     trace_unknown_mmio("mmiow", addr, value, 0u);
 }
 
+static void mmio_write32(u32 addr, u32 value) {
+    mmio_write(addr, value, 4u);
+}
+
+static void mmio_write16(u32 addr, u32 value) {
+    mmio_write(addr, value, 2u);
+}
+
+static void mmio_write8(u32 addr, u32 value) {
+    mmio_write(addr, value, 1u);
+}
+
 static u32 mem_mmio_read32(void *ctx, u32 addr) {
     (void)ctx;
     return mmio_read32(addr);
@@ -1139,6 +1219,16 @@ static u32 mem_mmio_read32(void *ctx, u32 addr) {
 static void mem_mmio_write32(void *ctx, u32 addr, u32 value) {
     (void)ctx;
     mmio_write32(addr, value);
+}
+
+static void mem_mmio_write16(void *ctx, u32 addr, u32 value) {
+    (void)ctx;
+    mmio_write16(addr, value);
+}
+
+static void mem_mmio_write8(void *ctx, u32 addr, u32 value) {
+    (void)ctx;
+    mmio_write8(addr, value);
 }
 
 static u8 bootrom_mem_read8(void *ctx, u32 addr) {
@@ -1330,6 +1420,8 @@ static int try_accelerate_memory_delay_loop(Cpu *cpu) {
     return 1;
 }
 
+static int nearby_timer_load_seen(Cpu *cpu, u32 start_pc, u32 end_pc);
+
 static int try_accelerate_timer_wait_loop(Cpu *cpu) {
     u32 pc = cpu->r[15];
     u16 op0 = mem_read16(pc);
@@ -1358,6 +1450,43 @@ static int try_accelerate_timer_wait_loop(Cpu *cpu) {
     g_sim_ms += TIMER_WAIT_ACCEL_US / 1000u;
     cpu->r[15] = pc + 2u;
     cpu->steps += 1u;
+    return 1;
+}
+
+static int try_accelerate_timer_compare_loop(Cpu *cpu) {
+    u32 pc = cpu->r[15];
+    u16 op0 = mem_read16(pc);
+    u16 op1 = mem_read16(pc + 2u);
+    u16 op2 = mem_read16(pc + 4u);
+    u32 low_reg;
+    u32 limit_reg;
+    u32 base_reg;
+    u32 branch_target;
+    u32 now;
+    u32 remaining;
+    if ((op0 & 0xf800u) != 0x6800u) return 0;
+    low_reg = op0 & 7u;
+    base_reg = (op0 >> 3) & 7u;
+    if ((((op0 >> 6) & 0x1fu) << 2) != 0x28u) return 0;
+    if (cpu->r[base_reg] != TIMER_BASE) return 0;
+    if ((op1 & 0xffc0u) != 0x4280u || (op1 & 7u) != low_reg) return 0;
+    limit_reg = (op1 >> 3) & 15u;
+    if ((op2 & 0xff00u) != 0xd300u) return 0;
+    branch_target = pc + 8u + sx((u32)(op2 & 0xffu) << 1, 9);
+    if (branch_target >= pc || pc - branch_target > 16u) return 0;
+    if (nearby_timer_load_seen(cpu, branch_target, pc) == 0) return 0;
+    now = timer_us_low();
+    if (now >= cpu->r[limit_reg]) return 0;
+    remaining = cpu->r[limit_reg] - now;
+    g_cycles += remaining * TIMER_CYCLES_PER_US;
+    g_sim_ms += remaining / 1000u;
+    cpu->r[low_reg] = cpu->r[limit_reg];
+    cpu->n = 0;
+    cpu->z = 1;
+    cpu->c = 1;
+    cpu->v = 0;
+    cpu->r[15] = pc + 6u;
+    cpu->steps += 3u;
     return 1;
 }
 
@@ -2078,6 +2207,10 @@ static void emulator_reset(Cpu *cpu, const char *key_script, int target_frames) 
         g_pll_usb[i] = 0;
     }
     for (i = 0; i < (int)(RTC_SIZE / 4u); ++i) g_rtc[i] = 0;
+    for (i = 0; i < (int)(PIO_SIZE / 4u); ++i) {
+        g_pio0[i] = 0;
+        g_pio1[i] = 0;
+    }
     g_xip_dr0_command = 0;
     g_xip_dr0_reads = 0;
     g_spi.cr0 = 0;
@@ -2180,6 +2313,7 @@ static int run_bin(const char *in_path, const char *image_path, const char *key_
             break;
         }
         if (try_accelerate_timer_wait_loop(&cpu)) continue;
+        if (try_accelerate_timer_compare_loop(&cpu)) continue;
         if (try_accelerate_timer_poll_branch(&cpu)) continue;
         if (step(&cpu) != 0) {
             out("emulation stopped at step "); out_hex(cpu.steps);
