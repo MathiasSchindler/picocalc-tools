@@ -102,6 +102,8 @@ typedef struct {
     const Elf32Shdr *header;
     const char *name;
     SectionKind kind;
+    int live;
+    int live_order;
     u32 vma;
     u32 lma;
     u32 output_offset;
@@ -111,6 +113,8 @@ typedef struct {
     const char *name;
     u32 value;
     u8 bind;
+    ObjectFile *object;
+    u32 symbol_index;
 } GlobalSymbol;
 
 static u8 g_file_storage[MAX_OBJECTS][MAX_FILE_SIZE];
@@ -129,6 +133,18 @@ static u32 g_data_end;
 static u32 g_bss_start;
 static u32 g_bss_end;
 static u32 g_output_size;
+static int g_live_section_count;
+static int g_discarded_section_count;
+static int g_relocation_count;
+static int g_relocation_abs32_count;
+static int g_relocation_thm_call_count;
+static int g_gc_sections = 1;
+static int g_print_stats;
+static int g_order_by_reach;
+static const char *g_map_path;
+
+static int special_symbol_value(const char *name, u32 *out_value);
+static void add_global_symbol(const char *name, u32 value, u8 bind, ObjectFile *object, u32 symbol_index);
 
 static u16 read16(const u8 *data) {
     return (u16)data[0] | ((u16)data[1] << 8);
@@ -285,10 +301,95 @@ static void collect_input_sections(ObjectFile *object) {
         input_section->header = section;
         input_section->name = name;
         input_section->kind = classify_section(name, section);
+        input_section->live = 0;
+        input_section->live_order = -1;
         input_section->vma = 0;
         input_section->lma = 0;
         input_section->output_offset = 0;
     }
+}
+
+static void mark_section_live(InputSection *input_section) {
+    if (input_section == 0 || input_section->live) return;
+    input_section->live = 1;
+    input_section->live_order = g_live_section_count++;
+}
+
+static InputSection *symbol_target_section(ObjectFile *object, u32 symbol_index) {
+    const Elf32Sym *symbol;
+    u32 value;
+    if (symbol_index >= object->symbol_count) fail_path("bad relocation symbol", object->path);
+    symbol = object->symbols + symbol_index;
+    if (symbol->st_shndx != SHN_UNDEF && symbol->st_shndx != SHN_ABS) return find_input_section(object, symbol->st_shndx);
+    if (symbol->st_shndx == SHN_ABS) return 0;
+    if (special_symbol_value(object->symbol_names + symbol->st_name, &value)) return 0;
+    for (int global_index = 0; global_index < g_global_count; ++global_index) {
+        if (str_eq(object->symbol_names + symbol->st_name, g_globals[global_index].name)) {
+            GlobalSymbol *global = g_globals + global_index;
+            if (global->object == 0) return 0;
+            return symbol_target_section(global->object, global->symbol_index);
+        }
+    }
+    if (elf_bind(symbol) == STB_WEAK) return 0;
+    out("pico_link: unresolved symbol during gc: ");
+    out(object->symbol_names + symbol->st_name);
+    out(" in ");
+    out(object->path);
+    out("\n");
+    sys_exit(1);
+}
+
+static void collect_global_symbol_names(void) {
+    int object_index;
+    for (object_index = 0; object_index < g_object_count; ++object_index) {
+        ObjectFile *object = g_objects + object_index;
+        u32 symbol_index;
+        for (symbol_index = 0; symbol_index < object->symbol_count; ++symbol_index) {
+            const Elf32Sym *symbol = object->symbols + symbol_index;
+            u8 bind = elf_bind(symbol);
+            if (bind != STB_GLOBAL && bind != STB_WEAK) continue;
+            if (symbol->st_shndx == SHN_UNDEF) continue;
+            add_global_symbol(object->symbol_names + symbol->st_name, 0, bind, object, symbol_index);
+        }
+    }
+}
+
+static void mark_reachable_sections(void) {
+    int changed = 1;
+    int section_pos;
+    if (!g_gc_sections) {
+        for (section_pos = 0; section_pos < g_input_section_count; ++section_pos) mark_section_live(g_input_sections + section_pos);
+        return;
+    }
+    for (section_pos = 0; section_pos < g_input_section_count; ++section_pos) {
+        if (g_input_sections[section_pos].kind == SEC_VECTORS) mark_section_live(g_input_sections + section_pos);
+    }
+    while (changed) {
+        changed = 0;
+        for (section_pos = 0; section_pos < g_input_section_count; ++section_pos) {
+            InputSection *input_section = g_input_sections + section_pos;
+            ObjectFile *object;
+            u32 rel_index;
+            if (!input_section->live) continue;
+            object = input_section->object;
+            for (rel_index = 0; rel_index < object->ehdr->e_shnum; ++rel_index) {
+                const Elf32Shdr *rel_section = object->sections + rel_index;
+                u32 relocation_count;
+                if (rel_section->sh_type != SHT_REL || rel_section->sh_info != input_section->section_index) continue;
+                if (rel_section->sh_entsize != sizeof(Elf32Rel)) fail_path("unexpected relocation size", object->path);
+                relocation_count = rel_section->sh_size / sizeof(Elf32Rel);
+                for (u32 relocation_index = 0; relocation_index < relocation_count; ++relocation_index) {
+                    const Elf32Rel *relocation = (const Elf32Rel *)(object->data + rel_section->sh_offset + relocation_index * sizeof(Elf32Rel));
+                    InputSection *target = symbol_target_section(object, rel_symbol_index(relocation));
+                    if (target != 0 && !target->live) {
+                        mark_section_live(target);
+                        changed = 1;
+                    }
+                }
+            }
+        }
+    }
+    for (section_pos = 0; section_pos < g_input_section_count; ++section_pos) if (!g_input_sections[section_pos].live) g_discarded_section_count += 1;
 }
 
 static void copy_section_bytes(InputSection *input_section) {
@@ -302,11 +403,17 @@ static void copy_section_bytes(InputSection *input_section) {
 }
 
 static u32 layout_flash_sections(SectionKind kind, u32 cursor) {
-    int section_pos;
-    for (section_pos = 0; section_pos < g_input_section_count; ++section_pos) {
-        InputSection *input_section = g_input_sections + section_pos;
+    int placed;
+    do {
+        InputSection *input_section = 0;
         u32 alignment;
-        if (input_section->kind != kind) continue;
+        placed = 0;
+        for (int section_pos = 0; section_pos < g_input_section_count; ++section_pos) {
+            InputSection *candidate = g_input_sections + section_pos;
+            if (candidate->kind != kind || !candidate->live || candidate->vma != 0u) continue;
+            if (input_section == 0 || (g_order_by_reach && candidate->live_order < input_section->live_order)) input_section = candidate;
+        }
+        if (input_section == 0) break;
         alignment = input_section->header->sh_addralign;
         if (alignment == 0u) alignment = 1u;
         cursor = align_up(cursor, alignment);
@@ -315,20 +422,25 @@ static u32 layout_flash_sections(SectionKind kind, u32 cursor) {
         input_section->output_offset = cursor - APP_BASE;
         copy_section_bytes(input_section);
         cursor += input_section->header->sh_size;
-    }
+        placed = 1;
+    } while (placed);
     return cursor;
 }
 
 static void layout_data_sections(u32 *ram_cursor, u32 *flash_cursor) {
-    int section_pos;
     *ram_cursor = align_up(*ram_cursor, 4u);
     *flash_cursor = align_up(*flash_cursor, 4u);
     g_data_start = *ram_cursor;
     g_data_source = *flash_cursor;
-    for (section_pos = 0; section_pos < g_input_section_count; ++section_pos) {
-        InputSection *input_section = g_input_sections + section_pos;
+    while (1) {
+        InputSection *input_section = 0;
         u32 alignment;
-        if (input_section->kind != SEC_DATA) continue;
+        for (int section_pos = 0; section_pos < g_input_section_count; ++section_pos) {
+            InputSection *candidate = g_input_sections + section_pos;
+            if (candidate->kind != SEC_DATA || !candidate->live || candidate->vma != 0u) continue;
+            if (input_section == 0 || (g_order_by_reach && candidate->live_order < input_section->live_order)) input_section = candidate;
+        }
+        if (input_section == 0) break;
         alignment = input_section->header->sh_addralign;
         if (alignment == 0u) alignment = 1u;
         *ram_cursor = align_up(*ram_cursor, alignment);
@@ -344,13 +456,17 @@ static void layout_data_sections(u32 *ram_cursor, u32 *flash_cursor) {
 }
 
 static void layout_bss_sections(u32 *ram_cursor) {
-    int section_pos;
     *ram_cursor = align_up(*ram_cursor, 4u);
     g_bss_start = *ram_cursor;
-    for (section_pos = 0; section_pos < g_input_section_count; ++section_pos) {
-        InputSection *input_section = g_input_sections + section_pos;
+    while (1) {
+        InputSection *input_section = 0;
         u32 alignment;
-        if (input_section->kind != SEC_BSS) continue;
+        for (int section_pos = 0; section_pos < g_input_section_count; ++section_pos) {
+            InputSection *candidate = g_input_sections + section_pos;
+            if (candidate->kind != SEC_BSS || !candidate->live || candidate->vma != 0u) continue;
+            if (input_section == 0 || (g_order_by_reach && candidate->live_order < input_section->live_order)) input_section = candidate;
+        }
+        if (input_section == 0) break;
         alignment = input_section->header->sh_addralign;
         if (alignment == 0u) alignment = 1u;
         *ram_cursor = align_up(*ram_cursor, alignment);
@@ -425,14 +541,21 @@ static int symbol_value(ObjectFile *object, u32 symbol_index, u32 *out_value) {
     return 0;
 }
 
-static void add_global_symbol(const char *name, u32 value, u8 bind) {
+static void add_global_symbol(const char *name, u32 value, u8 bind, ObjectFile *object, u32 symbol_index) {
     int global_index;
     if (name == 0 || name[0] == 0) return;
     for (global_index = 0; global_index < g_global_count; ++global_index) {
         if (str_eq(name, g_globals[global_index].name)) {
+            if (g_globals[global_index].object == object && g_globals[global_index].symbol_index == symbol_index) {
+                g_globals[global_index].value = value;
+                g_globals[global_index].bind = bind;
+                return;
+            }
             if (g_globals[global_index].bind == STB_WEAK && bind == STB_GLOBAL) {
                 g_globals[global_index].value = value;
                 g_globals[global_index].bind = bind;
+                g_globals[global_index].object = object;
+                g_globals[global_index].symbol_index = symbol_index;
                 return;
             }
             if (g_globals[global_index].bind == STB_GLOBAL && bind == STB_GLOBAL) {
@@ -448,6 +571,8 @@ static void add_global_symbol(const char *name, u32 value, u8 bind) {
     g_globals[g_global_count].name = name;
     g_globals[g_global_count].value = value;
     g_globals[g_global_count].bind = bind;
+    g_globals[g_global_count].object = object;
+    g_globals[g_global_count].symbol_index = symbol_index;
     g_global_count += 1;
 }
 
@@ -459,11 +584,16 @@ static void collect_global_symbols(void) {
         for (symbol_index = 0; symbol_index < object->symbol_count; ++symbol_index) {
             const Elf32Sym *symbol = object->symbols + symbol_index;
             u8 bind = elf_bind(symbol);
+            InputSection *input_section;
             u32 value;
             if (bind != STB_GLOBAL && bind != STB_WEAK) continue;
             if (symbol->st_shndx == SHN_UNDEF) continue;
+            if (symbol->st_shndx != SHN_ABS) {
+                input_section = find_input_section(object, symbol->st_shndx);
+                if (input_section == 0 || !input_section->live) continue;
+            }
             if (!symbol_value(object, symbol_index, &value)) sys_exit(1);
-            add_global_symbol(object->symbol_names + symbol->st_name, value, bind);
+            add_global_symbol(object->symbol_names + symbol->st_name, value, bind, object, symbol_index);
         }
     }
 }
@@ -537,12 +667,14 @@ static void apply_relocations(void) {
             if (rel_section->sh_entsize != sizeof(Elf32Rel)) fail_path("unexpected relocation size", object->path);
             target_section = find_input_section(object, rel_section->sh_info);
             if (target_section == 0) continue;
+            if (!target_section->live) continue;
             relocation_count = rel_section->sh_size / sizeof(Elf32Rel);
             for (u32 relocation_index = 0; relocation_index < relocation_count; ++relocation_index) {
                 const Elf32Rel *relocation = (const Elf32Rel *)(object->data + rel_section->sh_offset + relocation_index * sizeof(Elf32Rel));
                 u32 type = rel_type(relocation);
-                if (type == R_ARM_ABS32) apply_abs32(object, target_section, relocation);
-                else if (type == R_ARM_THM_CALL) apply_thumb_call(object, target_section, relocation);
+                g_relocation_count += 1;
+                if (type == R_ARM_ABS32) { g_relocation_abs32_count += 1; apply_abs32(object, target_section, relocation); }
+                else if (type == R_ARM_THM_CALL) { g_relocation_thm_call_count += 1; apply_thumb_call(object, target_section, relocation); }
                 else {
                     out("pico_link: unsupported relocation ");
                     out_hex(type);
@@ -556,8 +688,118 @@ static void apply_relocations(void) {
     }
 }
 
+static const char *section_kind_name(SectionKind kind) {
+    if (kind == SEC_VECTORS) return "vectors";
+    if (kind == SEC_TEXT) return "text";
+    if (kind == SEC_RODATA) return "rodata";
+    if (kind == SEC_DATA) return "data";
+    if (kind == SEC_BSS) return "bss";
+    return "unknown";
+}
+
+static void out_uint(u32 value) {
+    char buf[10];
+    int count = 0;
+    if (value == 0u) {
+        out("0");
+        return;
+    }
+    while (value != 0u && count < (int)sizeof(buf)) {
+        buf[count++] = (char)('0' + value % 10u);
+        value /= 10u;
+    }
+    while (count-- > 0) (void)sys_write(1, buf + count, 1);
+}
+
+static void write_map_line(int fd, const char *a, const char *b, const char *c) {
+    (void)sys_write(fd, a, str_len(a));
+    if (b != 0) (void)sys_write(fd, b, str_len(b));
+    if (c != 0) (void)sys_write(fd, c, str_len(c));
+    (void)sys_write(fd, "\n", 1);
+}
+
+static void write_map_hex(int fd, u32 value) {
+    char buf[10];
+    static const char hex[] = "0123456789abcdef";
+    int i;
+    buf[0] = '0';
+    buf[1] = 'x';
+    for (i = 0; i < 8; ++i) buf[2 + i] = hex[(value >> (28 - i * 4)) & 0xfu];
+    (void)sys_write(fd, buf, sizeof(buf));
+}
+
+static void write_map_dec(int fd, u32 value) {
+    char buf[10];
+    int count = 0;
+    if (value == 0u) {
+        (void)sys_write(fd, "0", 1);
+        return;
+    }
+    while (value != 0u && count < (int)sizeof(buf)) {
+        buf[count++] = (char)('0' + value % 10u);
+        value /= 10u;
+    }
+    while (count-- > 0) (void)sys_write(fd, buf + count, 1);
+}
+
+static void write_map_section(int fd, InputSection *input_section) {
+    write_map_hex(fd, input_section->live ? input_section->vma : 0u);
+    (void)sys_write(fd, " ", 1);
+    write_map_hex(fd, input_section->live ? input_section->lma : 0u);
+    (void)sys_write(fd, " ", 1);
+    write_map_dec(fd, input_section->header->sh_size);
+    (void)sys_write(fd, " ", 1);
+    (void)sys_write(fd, input_section->live ? "keep " : "drop ", 5);
+    write_map_line(fd, section_kind_name(input_section->kind), " ", input_section->name);
+}
+
+static void write_map(const char *path) {
+    long fd = sys_openat(AT_FDCWD, path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    int section_pos;
+    if (fd < 0) fail_path("create map failed", path);
+    write_map_line((int)fd, "PICOLINK MAP", 0, 0);
+    write_map_line((int)fd, "", 0, 0);
+    write_map_line((int)fd, "SECTIONS", 0, 0);
+    for (section_pos = 0; section_pos < g_input_section_count; ++section_pos) {
+        InputSection *next_section = 0;
+        for (int candidate_pos = 0; candidate_pos < g_input_section_count; ++candidate_pos) {
+            InputSection *candidate = g_input_sections + candidate_pos;
+            if (!candidate->live) continue;
+            if (candidate->vma == 0u) continue;
+            if (candidate->live_order < 0) continue;
+            if (next_section == 0 || candidate->vma < next_section->vma) next_section = candidate;
+        }
+        if (next_section == 0) break;
+        write_map_section((int)fd, next_section);
+        next_section->live_order = -1;
+    }
+    for (section_pos = 0; section_pos < g_input_section_count; ++section_pos) {
+        InputSection *input_section = g_input_sections + section_pos;
+        if (!input_section->live) write_map_section((int)fd, input_section);
+    }
+    write_map_line((int)fd, "", 0, 0);
+    write_map_line((int)fd, "SYMBOLS", 0, 0);
+    for (int global_index = 0; global_index < g_global_count; ++global_index) {
+        write_map_hex((int)fd, g_globals[global_index].value);
+        (void)sys_write((int)fd, " ", 1);
+        write_map_line((int)fd, g_globals[global_index].name, 0, 0);
+    }
+    (void)sys_close((int)fd);
+}
+
+static void print_stats(void) {
+    out("pico_link: sections kept="); out_uint((u32)g_live_section_count);
+    out(" discarded="); out_uint((u32)g_discarded_section_count);
+    out(" relocations="); out_uint((u32)g_relocation_count);
+    out(" abs32="); out_uint((u32)g_relocation_abs32_count);
+    out(" thm_call="); out_uint((u32)g_relocation_thm_call_count);
+    out(" image="); out_hex(g_output_size);
+    out(" bss="); out_hex(g_bss_end - g_bss_start);
+    out("\n");
+}
+
 static void usage(void) {
-    out("usage: pico_link -o output.bin input.o...\n");
+    out("usage: pico_link [-v] [--stats] [--map=path] [--no-gc-sections] [--order=reach] -o output.bin input.o...\n");
 }
 
 __attribute__((used)) int linker_main(int argc, char **argv) {
@@ -568,6 +810,25 @@ __attribute__((used)) int linker_main(int argc, char **argv) {
             arg_index += 1;
             if (arg_index >= argc) { usage(); return 1; }
             output_path = argv[arg_index++];
+        } else if (str_eq(argv[arg_index], "--stats") || str_eq(argv[arg_index], "-v")) {
+            g_print_stats = 1;
+            arg_index += 1;
+        } else if (str_starts(argv[arg_index], "--map=")) {
+            g_map_path = argv[arg_index] + 6;
+            arg_index += 1;
+        } else if (str_eq(argv[arg_index], "--map")) {
+            arg_index += 1;
+            if (arg_index >= argc) { usage(); return 1; }
+            g_map_path = argv[arg_index++];
+        } else if (str_eq(argv[arg_index], "--no-gc-sections")) {
+            g_gc_sections = 0;
+            arg_index += 1;
+        } else if (str_eq(argv[arg_index], "--order=reach")) {
+            g_order_by_reach = 1;
+            arg_index += 1;
+        } else if (str_eq(argv[arg_index], "--order=none")) {
+            g_order_by_reach = 0;
+            arg_index += 1;
         } else {
             break;
         }
@@ -583,15 +844,19 @@ __attribute__((used)) int linker_main(int argc, char **argv) {
         g_object_count += 1;
         arg_index += 1;
     }
+    collect_global_symbol_names();
+    mark_reachable_sections();
     layout_sections();
     collect_global_symbols();
     apply_relocations();
     write_whole_file(output_path, g_output, g_output_size);
+    if (g_map_path != 0) write_map(g_map_path);
     out("pico_link: wrote ");
     out(output_path);
     out(" size=");
     out_hex(g_output_size);
     out("\n");
+    if (g_print_stats) print_stats();
     return 0;
 }
 

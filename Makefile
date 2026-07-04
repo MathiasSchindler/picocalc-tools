@@ -79,6 +79,7 @@ BARE_GRAPHICS_BIN := $(BARE_DIR)/bare_graphics.bin
 BARE_CUBE_ELF := $(BARE_DIR)/bare_cube.elf
 BARE_CUBE_BIN := $(BARE_DIR)/bare_cube.bin
 BARE_CUBE_PICOLINK_BIN := $(BARE_DIR)/bare_cube_picolink.bin
+BARE_CUBE_PICOLINK_MAP := $(BARE_DIR)/bare_cube_picolink.map
 BARE_BENCHMARK_ELF := $(BARE_DIR)/bare_benchmark.elf
 BARE_BENCHMARK_BIN := $(BARE_DIR)/bare_benchmark.bin
 BARE_DIAGNOSTICS_ELF := $(BARE_DIR)/bare_diagnostics.elf
@@ -109,7 +110,7 @@ BARE_DMA_OBJS := $(BARE_DIR)/start.o $(BARE_DIR)/picocalc_lcd_bare.o $(BARE_DIR)
 BARE_THUMB_OBJS := $(BARE_DIR)/start.o $(BARE_DIR)/picocalc_lcd_bare.o $(BARE_DIR)/thumb_probe.o
 BARE_VENDOR_STARTUP_OBJS := $(BARE_DIR)/start.o $(BARE_DIR)/picocalc_lcd_bare.o $(BARE_DIR)/vendor_startup_probe.o
 
-.PHONY: all arm-probe bare-benchmark bare-cube bare-cube-picolink bare-diagnostics bare-dma-probe bare-graphics bare-hello bare-interrupt-probe bare-keys bare-solve bare-solve-fixed bare-thumb-probe bare-vendor-startup-probe bin-emu-benchmark bin-emu-cube bin-emu-cube-gif bin-emu-cube-picolink bin-emu-diagnostics bin-emu-dma-probe bin-emu-graphics bin-emu-graphics-frames bin-emu-hello bin-emu-hello-trace bin-emu-interrupt-probe bin-emu-live-hello bin-emu-live-solve bin-emu-solve bin-emu-thumb-probe bin-emu-vendor-startup-probe clean emu-deterministic-tests emu-replay-manifest-check emu-vendor-probe font-cascadia gui-graphics gui-hello gui-solve sim-graphics sim-solve-fixed sim-solve-repl smoke
+.PHONY: all arm-probe bare-benchmark bare-cube bare-cube-picolink bare-diagnostics bare-dma-probe bare-graphics bare-hello bare-interrupt-probe bare-keys bare-solve bare-solve-fixed bare-thumb-probe bare-vendor-startup-probe bin-emu-benchmark bin-emu-cube bin-emu-cube-gif bin-emu-cube-picolink bin-emu-diagnostics bin-emu-dma-probe bin-emu-graphics bin-emu-graphics-frames bin-emu-hello bin-emu-hello-trace bin-emu-interrupt-probe bin-emu-live-hello bin-emu-live-solve bin-emu-solve bin-emu-thumb-probe bin-emu-vendor-startup-probe clean cube-link-compare emu-deterministic-tests emu-replay-manifest-check emu-vendor-probe font-cascadia gui-graphics gui-hello gui-solve sim-graphics sim-solve-fixed sim-solve-repl smoke
 
 all: $(HOST_SOLVE)
 
@@ -189,6 +190,11 @@ bin-emu-cube: $(BIN_EMU) $(BARE_CUBE_BIN)
 
 bin-emu-cube-picolink: $(BIN_EMU) $(BARE_CUBE_PICOLINK_BIN)
 	$(BIN_EMU) $(BARE_CUBE_PICOLINK_BIN) $(EMU_DIR)/bare_cube_picolink.png --frames=1 --max-steps=80000000
+
+cube-link-compare: $(BIN_EMU) $(BARE_CUBE_BIN) $(BARE_CUBE_PICOLINK_BIN)
+	wc -c $(BARE_CUBE_BIN) $(BARE_CUBE_PICOLINK_BIN)
+	$(BIN_EMU) $(BARE_CUBE_BIN) $(EMU_DIR)/bare_cube_compare_gnu.png --frames=1 --max-steps=80000000
+	$(BIN_EMU) $(BARE_CUBE_PICOLINK_BIN) $(EMU_DIR)/bare_cube_compare_picolink.png --frames=1 --max-steps=80000000
 
 bin-emu-cube-gif: $(BIN_EMU) $(BARE_CUBE_BIN)
 	$(BIN_EMU) $(BARE_CUBE_BIN) $(EMU_DIR)/bare_cube.gif --frames=$(CUBE_GIF_FRAMES) --gif-fps=$(CUBE_GIF_FPS) --max-steps=$(CUBE_GIF_MAX_STEPS)
@@ -374,7 +380,7 @@ $(BARE_CUBE_BIN): $(BARE_CUBE_ELF)
 	od -An -tx4 -N8 $@
 
 $(BARE_CUBE_PICOLINK_BIN): $(PICO_LINK) $(BARE_CUBE_PICOLINK_OBJS)
-	$(PICO_LINK) -o $@ $(BARE_CUBE_PICOLINK_OBJS)
+	$(PICO_LINK) --stats --map=$(BARE_CUBE_PICOLINK_MAP) -o $@ $(BARE_CUBE_PICOLINK_OBJS)
 	od -An -tx4 -N8 $@
 
 bare-cube: $(BARE_CUBE_BIN)

@@ -14,34 +14,74 @@ __aeabi_uidivmod:
     subs r0, r0, #1
     pop {r4, pc}
 1:
-    movs r2, #0
-    movs r3, #0
-    movs r4, #32
+    cmp r0, r1
+    bhs 2f
+    mov r1, r0
+    movs r0, #0
+    pop {r4, pc}
 2:
-    lsls r0, r0, #1
-    adcs r3, r3
-    cmp r3, r1
-    bcc 3f
-    subs r3, r3, r1
-    lsls r2, r2, #1
-    adds r2, r2, #1
-    b 4f
+    movs r2, #0
+    movs r3, #1
 3:
-    lsls r2, r2, #1
+    cmp r1, r0
+    bhi 4f
+    lsrs r4, r1, #31
+    cmp r4, #0
+    bne 4f
+    lsls r1, r1, #1
+    lsls r3, r3, #1
+    b 3b
 4:
-    subs r4, r4, #1
-    bne 2b
+    cmp r0, r1
+    bcc 5f
+    subs r0, r0, r1
+    orrs r2, r3
+5:
+    lsrs r1, r1, #1
+    lsrs r3, r3, #1
+    bne 4b
+    mov r1, r0
     mov r0, r2
-    mov r1, r3
     pop {r4, pc}
 
     .section .text.__aeabi_uidiv,"ax",%progbits
     .global __aeabi_uidiv
     .thumb_func
 __aeabi_uidiv:
-    push {lr}
-    bl __aeabi_uidivmod
-    pop {pc}
+    push {r4, lr}
+    cmp r1, #0
+    bne 1f
+    movs r0, #0
+    subs r0, r0, #1
+    pop {r4, pc}
+1:
+    cmp r0, r1
+    bhs 2f
+    movs r0, #0
+    pop {r4, pc}
+2:
+    movs r2, #0
+    movs r3, #1
+3:
+    cmp r1, r0
+    bhi 4f
+    lsrs r4, r1, #31
+    cmp r4, #0
+    bne 4f
+    lsls r1, r1, #1
+    lsls r3, r3, #1
+    b 3b
+4:
+    cmp r0, r1
+    bcc 5f
+    subs r0, r0, r1
+    orrs r2, r3
+5:
+    lsrs r1, r1, #1
+    lsrs r3, r3, #1
+    bne 4b
+    mov r0, r2
+    pop {r4, pc}
 
     .section .text.__aeabi_idivmod,"ax",%progbits
     .global __aeabi_idivmod
@@ -78,9 +118,26 @@ __aeabi_idivmod:
     .global __aeabi_idiv
     .thumb_func
 __aeabi_idiv:
-    push {lr}
-    bl __aeabi_idivmod
-    pop {pc}
+    push {r4, lr}
+    movs r4, #0
+    cmp r0, #0
+    bge 1f
+    rsbs r0, r0, #0
+    movs r2, #1
+    eors r4, r2
+1:
+    cmp r1, #0
+    bge 2f
+    rsbs r1, r1, #0
+    movs r2, #1
+    eors r4, r2
+2:
+    bl __aeabi_uidiv
+    cmp r4, #0
+    beq 3f
+    rsbs r0, r0, #0
+3:
+    pop {r4, pc}
 
     .section .text.__aeabi_idiv0,"ax",%progbits
     .weak __aeabi_idiv0
