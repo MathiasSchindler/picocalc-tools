@@ -4,10 +4,17 @@ LDFLAGS ?= -nostdlib -no-pie
 LDLIBS ?= -lgcc
 
 BUILD_DIR := build
+GENERATED_DIR := $(BUILD_DIR)/generated
 PICOW_BUILD_DIR ?= $(BUILD_DIR)/picow
 SDK_HELLO_BUILD_DIR ?= $(BUILD_DIR)/sdk-hello
 PICOW_WIFI_DIAG_FLASH_BIN := $(PICOW_BUILD_DIR)/picow_wifi_diag_flash.bin
 PICOW_WIFI_DIAG_FLASH_UF2 := $(PICOW_BUILD_DIR)/picow_wifi_diag_flash.uf2
+PICOW_NET_DIAG_FLASH_BIN := $(PICOW_BUILD_DIR)/picow_net_diag_flash.bin
+PICOW_NET_DIAG_FLASH_UF2 := $(PICOW_BUILD_DIR)/picow_net_diag_flash.uf2
+PICOW_SSH_FLASH_BIN := $(PICOW_BUILD_DIR)/picow_ssh_flash.bin
+PICOW_SSH_FLASH_UF2 := $(PICOW_BUILD_DIR)/picow_ssh_flash.uf2
+PICOW_NET_SECRETS := test-data/ssid.txt
+PICOW_NET_SECRETS_HEADER := $(GENERATED_DIR)/picow_net_secrets.h
 SDK_HELLO_BIN := $(SDK_HELLO_BUILD_DIR)/picocalc_hello_flash.bin
 SDK_HELLO_UF2 := $(SDK_HELLO_BUILD_DIR)/picocalc_hello_flash.uf2
 SDK_HELLO_PICOLINK_OBJECTS := $(SDK_HELLO_BUILD_DIR)/picocalc_hello_sdk_picolink_objects.rsp
@@ -236,6 +243,8 @@ BARE_UF2_MENU_DIR := $(BARE_UF2_DIR)/menu
 BARE_UF2_VARIANTS_DIR := $(BARE_UF2_DIR)/variants
 PICOW_WIFI_DIAG_UF2 := $(BARE_UF2_DIR)/wifi_diag.uf2
 PICOW_WIFI_DIAG_MENU_UF2 := $(PICOW_WIFI_DIAG_UF2)
+PICOW_NET_DIAG_UF2 := $(BARE_UF2_DIR)/net_diag.uf2
+PICOW_SSH_UF2 := $(BARE_UF2_DIR)/ssh.uf2
 HELLO_MATRIX_UF2_DIR := $(BARE_UF2_DIR)/hello-matrix
 HELLO_MATRIX_SDK_GNU_UF2 := $(HELLO_MATRIX_UF2_DIR)/hello_sdk_gnu.uf2
 HELLO_MATRIX_SDK_PICOLINK_UF2 := $(HELLO_MATRIX_UF2_DIR)/hello_sdk_picolink.uf2
@@ -251,12 +260,12 @@ BARE_VARIANT_BINS := $(filter-out $(BARE_MENU_BINS),$(BARE_APP_BINS))
 BARE_MENU_UF2S := $(addprefix $(BARE_UF2_MENU_DIR)/,$(notdir $(BARE_MENU_BINS:.bin=.uf2)))
 BARE_VARIANT_UF2S := $(addprefix $(BARE_UF2_VARIANTS_DIR)/,$(notdir $(BARE_VARIANT_BINS:.bin=.uf2)))
 BARE_UF2S := $(BARE_MENU_UF2S) $(BARE_VARIANT_UF2S)
-PICOCALC_DELIVERABLE_UF2S := $(BARE_UF2_DIR)/hello.uf2 $(BARE_UF2_DIR)/keys.uf2 $(BARE_UF2_DIR)/solve.uf2 $(BARE_UF2_DIR)/graphics.uf2 $(BARE_UF2_DIR)/cube.uf2 $(BARE_UF2_DIR)/benchmark.uf2 $(BARE_UF2_DIR)/diagnostics.uf2 $(PICOW_WIFI_DIAG_UF2)
+PICOCALC_DELIVERABLE_UF2S := $(BARE_UF2_DIR)/hello.uf2 $(BARE_UF2_DIR)/keys.uf2 $(BARE_UF2_DIR)/solve.uf2 $(BARE_UF2_DIR)/graphics.uf2 $(BARE_UF2_DIR)/cube.uf2 $(BARE_UF2_DIR)/benchmark.uf2 $(BARE_UF2_DIR)/diagnostics.uf2 $(PICOW_WIFI_DIAG_UF2) $(PICOW_NET_DIAG_UF2)
 PICOCALC_DELIVERABLE_UF2_NAMES := $(notdir $(PICOCALC_DELIVERABLE_UF2S))
 
 .PHONY: uf2 picocalc-uf2
 
-.PHONY: all arm-probe bare-aeabi-double-probe bare-aeabi-double-probe-picolink bare-benchmark bare-benchmark-picolink bare-cube bare-cube-lto-picolink bare-cube-picolink bare-diagnostics bare-diagnostics-picolink bare-dma-probe bare-dma-probe-picolink bare-graphics bare-graphics-picolink bare-hello bare-hello-picolink bare-interrupt-probe bare-interrupt-probe-picolink bare-keys bare-keys-picolink bare-picolink-all bare-solve bare-solve-core-1bpp-picolink bare-solve-core-picolink bare-solve-fixed bare-solve-fixed-picolink bare-solve-lto bare-solve-picolink bare-thumb-probe bare-thumb-probe-picolink bare-uf2-all bare-uf2-menu bare-uf2-variants bare-vendor-startup-probe bare-vendor-startup-probe-picolink bin-emu-aeabi-double-probe bin-emu-aeabi-double-probe-picolink bin-emu-benchmark bin-emu-benchmark-picolink bin-emu-cube bin-emu-cube-gif bin-emu-cube-lto-picolink bin-emu-cube-picolink bin-emu-cyw43-trace-smoke bin-emu-diagnostics bin-emu-diagnostics-picolink bin-emu-dma-probe bin-emu-dma-probe-picolink bin-emu-graphics bin-emu-graphics-frames bin-emu-graphics-picolink bin-emu-hello bin-emu-hello-picolink bin-emu-hello-trace bin-emu-interrupt-probe bin-emu-interrupt-probe-picolink bin-emu-live-hello bin-emu-live-solve bin-emu-picow-wifi-diag bin-emu-sdk-hello bin-emu-solve bin-emu-solve-core-1bpp-picolink bin-emu-solve-core-picolink bin-emu-solve-fixed-picolink bin-emu-solve-lto bin-emu-solve-picolink bin-emu-thumb-probe bin-emu-thumb-probe-picolink bin-emu-vendor-startup-probe bin-emu-vendor-startup-probe-picolink clean cube-link-compare cyw43-blob-inventory emu-deterministic-tests emu-replay-manifest-check emu-vendor-probe font-cascadia font-cascadia-1bpp gui-graphics gui-hello gui-solve hello-linker-matrix hello-linker-matrix-small picolink-regression picow-wifi-diag sdk-hello-picolink-bin sdk-hello-uf2 sim-graphics sim-solve-fixed sim-solve-repl smoke
+.PHONY: all arm-probe bare-aeabi-double-probe bare-aeabi-double-probe-picolink bare-benchmark bare-benchmark-picolink bare-cube bare-cube-lto-picolink bare-cube-picolink bare-diagnostics bare-diagnostics-picolink bare-dma-probe bare-dma-probe-picolink bare-graphics bare-graphics-picolink bare-hello bare-hello-picolink bare-interrupt-probe bare-interrupt-probe-picolink bare-keys bare-keys-picolink bare-picolink-all bare-solve bare-solve-core-1bpp-picolink bare-solve-core-picolink bare-solve-fixed bare-solve-fixed-picolink bare-solve-lto bare-solve-picolink bare-thumb-probe bare-thumb-probe-picolink bare-uf2-all bare-uf2-menu bare-uf2-variants bare-vendor-startup-probe bare-vendor-startup-probe-picolink bin-emu-aeabi-double-probe bin-emu-aeabi-double-probe-picolink bin-emu-benchmark bin-emu-benchmark-picolink bin-emu-cube bin-emu-cube-gif bin-emu-cube-lto-picolink bin-emu-cube-picolink bin-emu-cyw43-trace-smoke bin-emu-diagnostics bin-emu-diagnostics-picolink bin-emu-dma-probe bin-emu-dma-probe-picolink bin-emu-graphics bin-emu-graphics-frames bin-emu-graphics-picolink bin-emu-hello bin-emu-hello-picolink bin-emu-hello-trace bin-emu-interrupt-probe bin-emu-interrupt-probe-picolink bin-emu-live-hello bin-emu-live-solve bin-emu-picow-wifi-diag bin-emu-sdk-hello bin-emu-solve bin-emu-solve-core-1bpp-picolink bin-emu-solve-core-picolink bin-emu-solve-fixed-picolink bin-emu-solve-lto bin-emu-solve-picolink bin-emu-thumb-probe bin-emu-thumb-probe-picolink bin-emu-vendor-startup-probe bin-emu-vendor-startup-probe-picolink clean cube-link-compare cyw43-blob-inventory emu-deterministic-tests emu-replay-manifest-check emu-vendor-probe font-cascadia font-cascadia-1bpp gui-graphics gui-hello gui-solve hello-linker-matrix hello-linker-matrix-small picolink-regression picow-net-diag picow-ssh picow-wifi-diag sdk-hello-picolink-bin sdk-hello-uf2 sim-graphics sim-solve-fixed sim-solve-repl smoke
 
 all: uf2
 
@@ -265,6 +274,9 @@ $(BUILD_DIR):
 
 $(TOOLS_DIR):
 	mkdir -p $(TOOLS_DIR)
+
+$(GENERATED_DIR):
+	mkdir -p $(GENERATED_DIR)
 
 $(BUILD_DIR)/%.o: src/%.c | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
@@ -464,6 +476,10 @@ sdk-hello-picolink-bin: $(SDK_HELLO_PICOLINK_BIN)
 
 picow-wifi-diag: $(PICOW_WIFI_DIAG_UF2)
 
+picow-net-diag: $(PICOW_NET_DIAG_UF2)
+
+picow-ssh: $(PICOW_SSH_UF2)
+
 bin-emu-picow-wifi-diag: $(BIN_EMU) picow-wifi-diag
 	$(BIN_EMU) $(PICOW_WIFI_DIAG_FLASH_BIN) $(EMU_DIR)/picow_wifi_diag.png --flash-start --trace=$(EMU_DIR)/picow_wifi_diag_cyw43.trace --trace-kinds=cyw43,unknown-mmio --cyw43-model --max-steps=$(PICOW_WIFI_DIAG_EMU_STEPS) --report-milestones
 
@@ -623,6 +639,21 @@ $(PICOW_WIFI_DIAG_UF2): $(BIN2UF2) CMakeLists.txt $(PICOCALC_SDK_SRC_DIR)/picow_
 	cmake --build $(PICOW_BUILD_DIR) --target picow_wifi_diag_flash -j2
 	cp $(PICOW_WIFI_DIAG_FLASH_UF2) $@
 	@ls -lh $(PICOW_WIFI_DIAG_FLASH_BIN) $(PICOW_WIFI_DIAG_FLASH_UF2) $@
+
+$(PICOW_NET_SECRETS_HEADER): $(PICOW_NET_SECRETS) Makefile | $(GENERATED_DIR)
+	@awk 'function trim(s){sub(/^[ \t]+/,"",s);sub(/[ \t\r]+$$/,"",s);return s} function esc(s){gsub(/\\/,"\\\\",s);gsub(/"/,"\\\"",s);return s} function unquote(s){if(length(s)>=2&&((substr(s,1,1)=="\""&&substr(s,length(s),1)=="\"")||(substr(s,1,1)=="'\''"&&substr(s,length(s),1)=="'\''")))return substr(s,2,length(s)-2);return s} /^[ \t]*(#|$$)/{next} {line=trim($$0);eq=index(line,"=");colon=index(line,":");if(eq==0||(colon>0&&colon<eq))eq=colon;if(eq>0){key=tolower(trim(substr(line,1,eq-1)));val=unquote(trim(substr(line,eq+1)));if(key=="ssid")ssid=val;else if(key=="password"||key=="pass"||key=="psk")pass=val;else if(key=="ping")ping=val;else if(key=="dns"||key=="host")dns=val}else{n++;line=unquote(line);if(n==1)ssid=line;else if(n==2)pass=line;else if(n==3)ping=line;else if(n==4)dns=line}} END{if(ssid==""){print "missing SSID in $(PICOW_NET_SECRETS)" > "/dev/stderr";exit 1} if(dns=="")dns="example.com";print "#ifndef PICOW_NET_SECRETS_H";print "#define PICOW_NET_SECRETS_H";print "#define PICOW_NET_SSID \"" esc(ssid) "\"";print "#define PICOW_NET_PASSWORD \"" esc(pass) "\"";print "#define PICOW_NET_PING_HOST \"" esc(ping) "\"";print "#define PICOW_NET_DNS_NAME \"" esc(dns) "\"";print "#endif"}' $< > $@
+
+$(PICOW_NET_DIAG_UF2): $(BIN2UF2) CMakeLists.txt $(PICOCALC_SDK_SRC_DIR)/picow_net_diag.c $(PICOW_NET_SECRETS_HEADER) | $(BARE_UF2_DIR)
+	PICO_SDK_PATH=$(PICO_SDK_PATH) cmake -S . -B $(PICOW_BUILD_DIR) -DPICO_BOARD=pico_w
+	cmake --build $(PICOW_BUILD_DIR) --target picow_net_diag_flash -j2
+	cp $(PICOW_NET_DIAG_FLASH_UF2) $@
+	@ls -lh $(PICOW_NET_DIAG_FLASH_BIN) $(PICOW_NET_DIAG_FLASH_UF2) $@
+
+$(PICOW_SSH_UF2): $(BIN2UF2) CMakeLists.txt src/ssh.c src/ssh/picow_ssh_platform.c src/ssh/picow_ssh_runtime.c src/ssh/picow_ssh_tool_util.c vendor/newos/ssh/ssh_client.c vendor/newos/ssh/ssh_core.c vendor/newos/ssh/ssh_known_hosts.c | $(BARE_UF2_DIR)
+	PICO_SDK_PATH=$(PICO_SDK_PATH) cmake -S . -B $(PICOW_BUILD_DIR) -DPICO_BOARD=pico_w
+	cmake --build $(PICOW_BUILD_DIR) --target picow_ssh_flash -j2
+	cp $(PICOW_SSH_FLASH_UF2) $@
+	@ls -lh $(PICOW_SSH_FLASH_BIN) $(PICOW_SSH_FLASH_UF2) $@
 
 $(BARE_UF2_MENU_DIR) $(BARE_UF2_VARIANTS_DIR):
 	mkdir -p $@

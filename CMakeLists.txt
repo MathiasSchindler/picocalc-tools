@@ -136,6 +136,7 @@ if(PICO_CYW43_SUPPORTED)
 
     target_include_directories(${target} PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}/src/picocalc/sdk
+        ${CMAKE_CURRENT_LIST_DIR}/build/generated
         ${CMAKE_CURRENT_LIST_DIR}/vendor/PicoCalc/Code/picocalc_helloworld/i2ckbd
         ${CMAKE_CURRENT_LIST_DIR}/vendor/PicoCalc/Code/pico_multi_booter/sd_boot/lcdspi
     )
@@ -165,6 +166,37 @@ if(PICO_CYW43_SUPPORTED)
     )
     configure_picow_wifi_diag_target(picow_wifi_diag_sd)
     set_target_properties(picow_wifi_diag_sd PROPERTIES OUTPUT_NAME picow_wifi_diag)
+
+    add_executable(picow_net_diag_flash
+        src/picocalc/sdk/picow_net_diag.c
+    )
+    configure_picow_wifi_diag_target(picow_net_diag_flash)
+    set_target_properties(picow_net_diag_flash PROPERTIES OUTPUT_NAME picow_net_diag_flash)
+
+    add_executable(picow_ssh_flash
+        src/ssh.c
+        src/ssh/picow_ssh_platform.c
+        src/ssh/picow_ssh_runtime.c
+        src/ssh/picow_ssh_tool_util.c
+        src/ssh/picow_ssh_ed25519_stub.c
+        vendor/newos/ssh/ssh_client.c
+        vendor/newos/ssh/ssh_core.c
+        vendor/newos/ssh/ssh_known_hosts.c
+        vendor/newos/crypto/chacha20_poly1305.c
+        vendor/newos/crypto/crypto_util.c
+        vendor/newos/crypto/curve25519.c
+        vendor/newos/crypto/sha256.c
+        vendor/newos/crypto/sha512.c
+        vendor/newos/crypto/ssh_kdf.c
+    )
+    configure_picow_wifi_diag_target(picow_ssh_flash)
+    target_include_directories(picow_ssh_flash PRIVATE
+        ${CMAKE_CURRENT_LIST_DIR}/src/ssh
+        ${CMAKE_CURRENT_LIST_DIR}/vendor/newos
+        ${CMAKE_CURRENT_LIST_DIR}/vendor/newos/ssh
+    )
+    target_link_libraries(picow_ssh_flash PRIVATE pico_rand)
+    set_target_properties(picow_ssh_flash PROPERTIES OUTPUT_NAME picow_ssh_flash)
 
     if(PICO_PLATFORM STREQUAL "rp2040")
         pico_set_linker_script(picow_wifi_diag_sd ${CMAKE_CURRENT_LIST_DIR}/vendor/PicoCalc/Code/pico_multi_booter/memmap_default_rp2040.ld)
