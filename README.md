@@ -59,6 +59,22 @@ make bin-emu-cyw43-trace-smoke
 
 This is Tier B/Tier C scaffolding: useful for blob-backed Pico W bring-up and protocol capture, not a complete CYW43439 radio emulator.
 
+The first PicoCalc/Pico W hardware diagnostic is `picow_wifi_diag`. It builds a PicoCalc SD-app-style raw binary using the Pico SDK `cyw43` stack and the PicoCalc LCD/keyboard libraries:
+
+```sh
+make picow-wifi-diag
+```
+
+The hardware test binary is `build-picow/picow_wifi_diag.bin`. CMake also emits `build-picow/picow_wifi_diag.uf2`, but that file is addressed at the PicoCalc app slot and is not suitable for the current `/pico1-apps` UF2 menu by itself. The Make target therefore also writes `build-picow/picow_wifi_diag_menu.uf2`, a flash-start wrapper UF2 for the PicoCalc SD v0.6-style menu. A blank Pico W still needs a PicoCalc bootloader or full base firmware first. On the PicoCalc, the app scans for nearby Wi-Fi networks, marks open APs, and only attempts `CYW43_AUTH_OPEN` connections. Controls are `r` to rescan, Enter to try the selected open AP, `j`/`k` or arrow keys to move selection, and `q`/Esc to quit/deinit.
+
+You can run the same image through the emulator CYW43 trace harness with:
+
+```sh
+make bin-emu-picow-wifi-diag
+```
+
+That run currently reaches CYW43 GPIO, PIO program setup, DMA-to/from-PIO transactions, and fake PIO RX words, then budgets in a Pico SDK timer wait. This is useful protocol/frontier data, not proof of a working radio model.
+
 Two firmware formats are generated:
 
 - `build-pico/picocalc_solve.uf2` is for normal BOOTSEL/USB UF2 flashing.
@@ -131,6 +147,14 @@ make bare-solve
 ```
 
 This writes `build/bare/bare_solve.bin`, the file to copy to the PicoCalc SD card's `firmware/` directory for hardware testing.
+
+For PicoCalc SD v0.6-style UF2 loader menus, the main SDK-free app-slot binaries can also be packaged as flash-start RP2040 UF2 files with a tiny wrapper that jumps to the existing app image at `0x10032000`:
+
+```sh
+make bare-uf2-menu
+```
+
+This writes the recommended copy-to-SD set under `build/uf2/menu/`, including `bare_cube.uf2`, `bare_solve.uf2`, `bare_graphics.uf2`, and `bare_diagnostics.uf2`. Experimental LTO, `pico_link`, fixed-solve, and focused probe UF2s are kept out of that directory; build them with `make bare-uf2-variants`, or build everything with `make bare-uf2-all`. The raw `.bin` files remain the right format for the older `/firmware` SD-app loader path.
 
 The custom dependency-free `pico_link` path links the same bare solve firmware directly from relocatable objects plus the local PicoCalc runtime archive:
 

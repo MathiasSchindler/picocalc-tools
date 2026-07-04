@@ -1,4 +1,6 @@
 build/
+build-picow/
+build-sdk-hello/
 
 vendor/*
 !vendor/newos/

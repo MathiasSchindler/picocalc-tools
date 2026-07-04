@@ -175,6 +175,8 @@ typedef struct {
     int live_terminal;
     int fail_on_budget;
     int report_milestones;
+    u32 input_base;
+    u32 vector_base;
     u32 max_steps;
     int gif_active;
     int gif_fd;

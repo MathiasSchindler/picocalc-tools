@@ -197,6 +197,21 @@
 #define RTC_CTRL               0x0cu
 #define RTC_CTRL_ACTIVE        (1u << 1)
 
+#define BUSCTRL_BASE           0x40030000u
+#define BUSCTRL_SIZE           0x00001000u
+#define BUSCTRL_PRIORITY_ACK   0x04u
+#define BUSCTRL_PERFSEL0       0x0cu
+#define BUSCTRL_PERFSEL1       0x14u
+#define BUSCTRL_PERFSEL2       0x1cu
+#define BUSCTRL_PERFSEL3       0x24u
+
+#define ROSC_BASE              0x40060000u
+#define ROSC_STATUS            (ROSC_BASE + 0x18u)
+#define ROSC_RANDOMBIT         (ROSC_BASE + 0x1cu)
+#define ROSC_STATUS_STABLE     (1u << 31)
+#define ROSC_STATUS_DIV_RUNNING (1u << 16)
+#define ROSC_STATUS_ENABLED    (1u << 12)
+
 #define XIP_SSI_BASE           0x18000000u
 #define XIP_SSI_SIZE           0x00000100u
 #define XIP_SSI_SR             (XIP_SSI_BASE + 0x28u)
@@ -251,6 +266,8 @@ static usize g_symbol_name_used;
 #define g_live_terminal g_emu.live_terminal
 #define g_fail_on_budget g_emu.fail_on_budget
 #define g_report_milestones g_emu.report_milestones
+#define g_input_base g_emu.input_base
+#define g_vector_base g_emu.vector_base
 #define g_max_steps g_emu.max_steps
 #define g_gif_active g_emu.gif_active
 #define g_gif_fd g_emu.gif_fd
@@ -1272,6 +1289,14 @@ static u32 mmio_read32(u32 addr) {
         if (addr == RTC_BASE + RTC_CTRL && (value & 1u)) value |= RTC_CTRL_ACTIVE;
         return value;
     }
+    if (addr >= BUSCTRL_BASE && addr < BUSCTRL_BASE + BUSCTRL_SIZE) {
+        u32 off = addr - BUSCTRL_BASE;
+        if (off == BUSCTRL_PRIORITY_ACK) return 1u;
+        if (off == BUSCTRL_PERFSEL0 || off == BUSCTRL_PERFSEL1 || off == BUSCTRL_PERFSEL2 || off == BUSCTRL_PERFSEL3) return 0x1fu;
+        return 0u;
+    }
+    if (addr == ROSC_STATUS) return ROSC_STATUS_STABLE | ROSC_STATUS_DIV_RUNNING | ROSC_STATUS_ENABLED;
+    if (addr == ROSC_RANDOMBIT) return (g_cycles >> 3) & 1u;
     if (addr == PPB_SYST_CSR) return g_core.syst_csr;
     if (addr == PPB_SYST_RVR) return g_core.syst_rvr;
     if (addr == PPB_SYST_CVR) return g_core.syst_cvr;
@@ -1930,6 +1955,11 @@ static int step(Cpu *cpu) {
             cpu->r[15] = pc + 4u;
             return 0;
         }
+        if ((op2 & 0xf000u) == 0x8000u && sysm == 0x05) {
+            cpu->r[rd] = cpu->ipsr;
+            cpu->r[15] = pc + 4u;
+            return 0;
+        }
     }
 
     if ((op & 0xf800u) == 0xf000u) {
@@ -2317,7 +2347,7 @@ static void save_flash_state(void) {
 
 static int load_file(const char *path) {
     long fd = sys_openat(AT_FDCWD, path, O_RDONLY, 0);
-    usize off = APP_FLASH_OFFSET;
+    usize off = (usize)(g_input_base - FLASH_BASE);
     usize loaded = 0;
     if (fd < 0) return -1;
     while (off < sizeof(g_flash)) {
@@ -2513,7 +2543,7 @@ static void emulator_reset(Cpu *cpu, const char *key_script, int target_frames) 
         g_dma[i].transfer_count = 0;
         g_dma[i].ctrl_trig = 0;
     }
-    g_core.vtor = APP_BASE;
+    g_core.vtor = g_vector_base;
     g_core.icsr = 0;
     g_core.nvic_enable = 0;
     g_core.nvic_pending = 0;
@@ -2547,9 +2577,9 @@ static int run_bin(const char *in_path, const char *image_path, const char *key_
         terminal_leave_live();
         return 1;
     }
-    sp = read_le32(g_flash + APP_FLASH_OFFSET);
-    reset = read_le32(g_flash + APP_FLASH_OFFSET + 4u);
-    if (sp != 0x20042000u || (reset & 1u) == 0u) {
+    sp = read_le32(g_flash + (usize)(g_vector_base - FLASH_BASE));
+    reset = read_le32(g_flash + (usize)(g_vector_base - FLASH_BASE) + 4u);
+    if (sp < RAM_BASE || sp > RAM_BASE + RAM_SIZE || (reset & 1u) == 0u) {
         out("unexpected vector table sp="); out_hex(sp); out(" reset="); out_hex(reset); out("\n");
         save_flash_state();
         terminal_leave_live();
@@ -2649,6 +2679,8 @@ __attribute__((used)) int emu_main(int argc, char **argv) {
     g_live_terminal = 0;
     g_fail_on_budget = 0;
     g_report_milestones = 0;
+    g_input_base = APP_BASE;
+    g_vector_base = APP_BASE;
     g_flash_state_path = 0;
     g_cyw43_wifi_fw_path = 0;
     g_cyw43_bt_fw_path = 0;
@@ -2665,7 +2697,7 @@ __attribute__((used)) int emu_main(int argc, char **argv) {
         else if (str_starts(argv[i], "--cyw43-nvram=")) g_cyw43_nvram_path = argv[i] + 14;
     }
     if (argc < 3 && !g_cyw43_inventory) {
-        out("usage: bin_emu input.bin output.png|output.gif [key-script|-|@file] [--frames=N] [--gif-fps=N] [--trace[=path]] [--trace-kinds=base,calls,unknown-mmio,xip,cyw43|all] [--expect-hash=HEX] [--max-steps=N] [--fail-on-budget] [--report-milestones] [--live-terminal] [--flash-state=PATH] [--symbols=MAP] [--cyw43-model] [--cyw43-inventory --cyw43-wifi-fw=PATH --cyw43-bt-fw=PATH --cyw43-nvram=PATH]\n");
+        out("usage: bin_emu input.bin output.png|output.gif [key-script|-|@file] [--frames=N] [--gif-fps=N] [--trace[=path]] [--trace-kinds=base,calls,unknown-mmio,xip,cyw43|all] [--expect-hash=HEX] [--max-steps=N] [--fail-on-budget] [--report-milestones] [--live-terminal] [--flash-start] [--flash-state=PATH] [--symbols=MAP] [--cyw43-model] [--cyw43-inventory --cyw43-wifi-fw=PATH --cyw43-bt-fw=PATH --cyw43-nvram=PATH]\n");
         return 1;
     }
     if (g_cyw43_inventory && (argc < 3 || argv[1][0] == '-')) {
@@ -2713,6 +2745,9 @@ __attribute__((used)) int emu_main(int argc, char **argv) {
             g_report_milestones = 1;
         } else if (str_eq(argv[i], "--live-terminal")) {
             g_live_terminal = 1;
+        } else if (str_eq(argv[i], "--flash-start")) {
+            g_input_base = FLASH_BASE;
+            g_vector_base = FLASH_BASE + BOOT2_SIZE;
         } else if (str_starts(argv[i], "--flash-state=")) {
             g_flash_state_path = argv[i] + 14;
         } else if (str_starts(argv[i], "--symbols=")) {

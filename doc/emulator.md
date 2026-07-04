@@ -19,6 +19,7 @@ make bin-emu-cube-gif
 make bin-emu-aeabi-double-probe
 make cyw43-blob-inventory
 make bin-emu-cyw43-trace-smoke
+make bin-emu-picow-wifi-diag
 make picolink-regression
 ```
 
@@ -35,7 +36,7 @@ The emulator is a no-libc Linux host program. It uses `_start`, direct syscalls,
 - loads flat PicoCalc/RP2040 `.bin` images at the SD-app firmware address
 - maps the firmware flash image, RAM, Boot2 stub reads, and targeted Boot ROM table/helper behavior
 - interprets the ARMv6-M Thumb instructions used by current local firmware and staged vendor probes
-- models enough reset, clock, timer, SIO, SysTick, NVIC, exception, DMA, SPI, I2C, UART, RTC, PIO status, XIP SSI, LCD, and keyboard behavior for the active test cases
+- models enough reset, clock, timer, SIO, SysTick, NVIC, exception, DMA, SPI, I2C, UART, RTC, ROSC random/status, BUSCTRL reset-status reads, PIO status, XIP SSI, LCD, and keyboard behavior for the active test cases
 - decodes PicoCalc LCD command/data traffic into a 320x320 RGB framebuffer
 - writes PNG output by default when the output path ends in `.png`
 - writes PPM output only when the output path explicitly ends in `.ppm`
@@ -119,6 +120,15 @@ Smoke-test the CYW43 trace hooks with the existing PIO startup probe:
 ```
 make bin-emu-cyw43-trace-smoke
 ```
+
+Build and emulate the PicoCalc/Pico W Wi-Fi diagnostic:
+
+```
+make picow-wifi-diag
+make bin-emu-picow-wifi-diag
+```
+
+The diagnostic image is built by the Pico SDK, not `pico_link`, because it intentionally uses the SDK `cyw43`, lwIP, and CYW43439 blob path. The current emulator run reaches CYW43 GPIO setup, PIO1 program/configuration writes, DMA transfers into and out of PIO FIFOs, and fake PIO RX words from `--cyw43-model`, then budgets in a Pico SDK timer wait. Treat that as the current emulator frontier for the blob-backed wireless profile.
 
 Run the optional feature-sliced PicoCalc solve image:
 
