@@ -1969,7 +1969,7 @@ static int ssh_start_exec_command(
                         return -1;
                     }
                     *client_seq_io += 1U;
-                    if (config->output_callback != 0) {
+                    if (config->local_echo && config->output_callback != 0) {
                         (void)config->output_callback(stdin_buffer + input_offset, chunk, 0, config->output_user_data);
                     }
                     input_offset += chunk;
