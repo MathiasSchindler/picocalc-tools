@@ -36,7 +36,12 @@ CUBE_GIF_FPS ?= 15
 CUBE_GIF_MAX_STEPS ?= 80000000
 PNG_WRITER_OBJ := $(EMU_DIR)/png_writer.o
 GIF_WRITER_OBJ := $(EMU_DIR)/gif_writer.o
-BIN_EMU_OBJS := $(EMU_DIR)/bin_emu.o $(PNG_WRITER_OBJ) $(GIF_WRITER_OBJ)
+EMU_UTIL_OBJ := $(EMU_DIR)/emu_util.o
+EMU_TRACE_OBJ := $(EMU_DIR)/emu_trace.o
+EMU_LCD_OBJ := $(EMU_DIR)/emu_lcd.o
+EMU_BOOTROM_OBJ := $(EMU_DIR)/emu_bootrom.o
+EMU_MEM_OBJ := $(EMU_DIR)/emu_mem.o
+BIN_EMU_OBJS := $(EMU_DIR)/bin_emu.o $(EMU_UTIL_OBJ) $(EMU_TRACE_OBJ) $(EMU_LCD_OBJ) $(EMU_BOOTROM_OBJ) $(EMU_MEM_OBJ) $(PNG_WRITER_OBJ) $(GIF_WRITER_OBJ)
 GUI_DIR := $(BUILD_DIR)/gui
 PICOCALC_SHELL := $(EMU_DIR)/picocalc_shell
 PICOCALC_SHELL_OBJS := $(EMU_DIR)/picocalc_shell.o $(PNG_WRITER_OBJ)
@@ -128,6 +133,18 @@ $(EMU_DIR):
 
 $(EMU_DIR)/%.o: $(HOST_EMU_SRC_DIR)/%.c | $(EMU_DIR)
 	$(CC) $(EMU_CFLAGS) -c $< -o $@
+
+$(EMU_DIR)/bin_emu.o: $(HOST_EMU_SRC_DIR)/host_nolibc.h $(HOST_EMU_SRC_DIR)/emu_state.h $(HOST_EMU_SRC_DIR)/emu_bootrom.h $(HOST_EMU_SRC_DIR)/emu_lcd.h $(HOST_EMU_SRC_DIR)/emu_mem.h $(HOST_EMU_SRC_DIR)/emu_trace.h $(HOST_EMU_SRC_DIR)/emu_util.h $(HOST_EMU_SRC_DIR)/gif_writer.h $(HOST_EMU_SRC_DIR)/png_writer.h
+
+$(EMU_DIR)/emu_util.o: $(HOST_EMU_SRC_DIR)/emu_util.h
+
+$(EMU_DIR)/emu_trace.o: $(HOST_EMU_SRC_DIR)/emu_trace.h $(HOST_EMU_SRC_DIR)/emu_state.h $(HOST_EMU_SRC_DIR)/host_nolibc.h
+
+$(EMU_DIR)/emu_lcd.o: $(HOST_EMU_SRC_DIR)/emu_lcd.h $(HOST_EMU_SRC_DIR)/emu_trace.h $(HOST_EMU_SRC_DIR)/emu_state.h
+
+$(EMU_DIR)/emu_bootrom.o: $(HOST_EMU_SRC_DIR)/emu_bootrom.h $(HOST_EMU_SRC_DIR)/emu_trace.h $(HOST_EMU_SRC_DIR)/emu_util.h $(HOST_EMU_SRC_DIR)/emu_state.h
+
+$(EMU_DIR)/emu_mem.o: $(HOST_EMU_SRC_DIR)/emu_mem.h $(HOST_EMU_SRC_DIR)/emu_bootrom.h $(HOST_EMU_SRC_DIR)/emu_util.h $(HOST_EMU_SRC_DIR)/emu_state.h
 
 $(BIN_EMU): $(BIN_EMU_OBJS)
 	$(CC) $(EMU_LDFLAGS) $^ -lgcc -o $@

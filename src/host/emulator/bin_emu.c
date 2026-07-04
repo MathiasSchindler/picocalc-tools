@@ -1,4 +1,9 @@
 #include "host_nolibc.h"
+#include "emu_bootrom.h"
+#include "emu_lcd.h"
+#include "emu_mem.h"
+#include "emu_trace.h"
+#include "emu_util.h"
 #include "gif_writer.h"
 #include "png_writer.h"
 
@@ -164,45 +169,6 @@
 #define SIO_SPINLOCK_BASE      0xd0000100u
 #define SIO_SPINLOCK_END       0xd0000180u
 
-#define BOOTROM_FUNC_TABLE     0x00000200u
-#define BOOTROM_DATA_TABLE     0x00000300u
-#define BOOTROM_LOOKUP_ADDR    0x00000100u
-#define BOOTROM_SD_TABLE       0x00000402u
-#define BOOTROM_SF_TABLE       0x00000482u
-#define BOOTROM_FN_L3          0x00001100u
-#define BOOTROM_FN_P3          0x00001110u
-#define BOOTROM_FN_R3          0x00001120u
-#define BOOTROM_FN_T3          0x00001130u
-#define BOOTROM_FN_MS          0x00001140u
-#define BOOTROM_FN_MC          0x00001150u
-#define BOOTROM_FN_S4          0x00001160u
-#define BOOTROM_FN_C4          0x00001170u
-#define ROM_CODE_SD            0x00004453u
-#define ROM_CODE_SF            0x00004653u
-#define ROM_CODE_L3            0x0000334cu
-#define ROM_CODE_P3            0x00003350u
-#define ROM_CODE_R3            0x00003352u
-#define ROM_CODE_T3            0x00003354u
-#define ROM_CODE_MS            0x0000534du
-#define ROM_CODE_MC            0x0000434du
-#define ROM_CODE_S4            0x00003453u
-#define ROM_CODE_C4            0x00003443u
-#define BOOTROM_FN_IF          0x00001180u
-#define BOOTROM_FN_EX          0x00001190u
-#define BOOTROM_FN_FC          0x000011a0u
-#define BOOTROM_FN_RE          0x000011b0u
-#define BOOTROM_FN_RP          0x000011c0u
-#define BOOTROM_FN_FADD        0x00001200u
-#define BOOTROM_FN_FSUB        0x00001210u
-#define BOOTROM_FN_FMUL        0x00001220u
-#define BOOTROM_FN_FDIV        0x00001230u
-#define BOOTROM_FN_F2I         0x00001240u
-#define ROM_CODE_IF            0x00004649u
-#define ROM_CODE_EX            0x00005845u
-#define ROM_CODE_FC            0x00004346u
-#define ROM_CODE_RE            0x00004552u
-#define ROM_CODE_RP            0x00005052u
-
 #define TIMER_BASE             0x40054000u
 #define TIMERAWH               (TIMER_BASE + 0x24u)
 #define TIMERAWL               (TIMER_BASE + 0x28u)
@@ -225,219 +191,136 @@
 #define KBD_ADDR               0x1fu
 #define KBD_REG_KEY            0x09u
 
-#define TRACE_BASE             (1u << 0)
-#define TRACE_CALLS            (1u << 1)
-#define TRACE_UNKNOWN_MMIO     (1u << 2)
-#define TRACE_XIP              (1u << 3)
-
-
 #define LIVE_COLS 80
 #define LIVE_ROWS 40
 
-static u8 g_flash[2u * 1024u * 1024u];
-static usize g_flash_size;
-static u8 g_ram[RAM_SIZE];
-static u8 g_framebuffer[LCD_W * LCD_H * 3u];
-static u8 g_png_work[PNG_RGB8_WORK_SIZE(LCD_W, LCD_H)];
-static GifWriter g_gif;
-static const char *g_key_script;
-static char g_key_file[4096];
-static usize g_key_script_pos;
-static u32 g_cycles;
-static u32 g_sim_ms;
-static int g_frame_ready;
-static int g_live_stdin;
-static int g_trace_fd;
-static u32 g_trace_mask;
-static u32 g_frame_hash;
-static u32 g_last_output_hash;
-static u32 g_expected_hash;
-static int g_expect_hash;
-static int g_live_terminal;
-static int g_fail_on_budget;
-static int g_report_milestones;
-static u32 g_max_steps;
-static int g_gif_active;
-static int g_gif_fd;
-static int g_gif_fps;
-static const char *g_flash_state_path;
-static u32 g_current_pc;
-static int g_frame_index;
-static int g_target_frames;
-static int g_seen_lcd_command;
-static u32 g_first_lcd_command;
-static u32 g_first_lcd_command_pc;
-static u32 g_first_lcd_command_cycles;
-static int g_seen_lcd_pixel;
-static u32 g_first_lcd_pixel_x;
-static u32 g_first_lcd_pixel_y;
-static u32 g_first_lcd_pixel_rgb;
-static u32 g_first_lcd_pixel_pc;
-static u32 g_first_lcd_pixel_cycles;
-static int g_seen_lcd_nonblack;
-static u32 g_first_lcd_nonblack_x;
-static u32 g_first_lcd_nonblack_y;
-static u32 g_first_lcd_nonblack_rgb;
-static u32 g_first_lcd_nonblack_pc;
-static u32 g_first_lcd_nonblack_cycles;
-static int g_skip_tick_after_exception_return;
-static u32 g_resets_reset;
-static u32 g_gpio_out;
-static u32 g_gpio_oe;
-static u32 g_sio_dividend;
-static u32 g_sio_divisor;
-static u32 g_sio_quotient;
-static u32 g_sio_remainder;
-static int g_sio_div_signed;
-static int g_sio_div_dirty;
-static u32 g_io_bank0[IO_BANK0_SIZE / 4u];
-static u32 g_pads_bank0[PADS_BANK0_SIZE / 4u];
-static u32 g_clocks[CLOCKS_SIZE / 4u];
-static u32 g_xosc[XOSC_SIZE / 4u];
-static u32 g_pll_sys[PLL_SIZE / 4u];
-static u32 g_pll_usb[PLL_SIZE / 4u];
-static u32 g_rtc[RTC_SIZE / 4u];
-static u32 g_uart0[UART_SIZE / 4u];
-static u32 g_xip_dr0_command;
-static u32 g_xip_dr0_reads;
+#include "emu_state.h"
 
-typedef struct {
-    u32 r[16];
-    u32 n;
-    u32 z;
-    u32 c;
-    u32 v;
-    u32 primask;
-    u32 ipsr;
-    u32 steps;
-} Cpu;
+static EmuState g_emu;
 
-typedef struct {
-    int dc;
-    int cs;
-    int sleep;
-    int display_on;
-    int invert;
-    u8 madctl;
-    u8 colmod;
-    u8 command;
-    u8 params[16];
-    int param_count;
-    int x0;
-    int x1;
-    int y0;
-    int y1;
-    int x;
-    int y;
-    u8 pixel[3];
-    int pixel_count;
-} Lcd;
+#define g_flash g_emu.flash
+#define g_flash_size g_emu.flash_size
+#define g_ram g_emu.ram
+#define g_framebuffer g_emu.framebuffer
+#define g_png_work g_emu.png_work
+#define g_gif g_emu.gif
+#define g_key_script g_emu.key_script
+#define g_key_file g_emu.key_file
+#define g_key_script_pos g_emu.key_script_pos
+#define g_cycles g_emu.cycles
+#define g_sim_ms g_emu.sim_ms
+#define g_frame_ready g_emu.frame_ready
+#define g_live_stdin g_emu.live_stdin
+#define g_trace_fd g_emu.trace_fd
+#define g_trace_mask g_emu.trace_mask
+#define g_frame_hash g_emu.frame_hash
+#define g_last_output_hash g_emu.last_output_hash
+#define g_expected_hash g_emu.expected_hash
+#define g_expect_hash g_emu.expect_hash
+#define g_live_terminal g_emu.live_terminal
+#define g_fail_on_budget g_emu.fail_on_budget
+#define g_report_milestones g_emu.report_milestones
+#define g_max_steps g_emu.max_steps
+#define g_gif_active g_emu.gif_active
+#define g_gif_fd g_emu.gif_fd
+#define g_gif_fps g_emu.gif_fps
+#define g_flash_state_path g_emu.flash_state_path
+#define g_current_pc g_emu.current_pc
+#define g_frame_index g_emu.frame_index
+#define g_target_frames g_emu.target_frames
+#define g_seen_lcd_command g_emu.seen_lcd_command
+#define g_first_lcd_command g_emu.first_lcd_command
+#define g_first_lcd_command_pc g_emu.first_lcd_command_pc
+#define g_first_lcd_command_cycles g_emu.first_lcd_command_cycles
+#define g_seen_lcd_pixel g_emu.seen_lcd_pixel
+#define g_first_lcd_pixel_x g_emu.first_lcd_pixel_x
+#define g_first_lcd_pixel_y g_emu.first_lcd_pixel_y
+#define g_first_lcd_pixel_rgb g_emu.first_lcd_pixel_rgb
+#define g_first_lcd_pixel_pc g_emu.first_lcd_pixel_pc
+#define g_first_lcd_pixel_cycles g_emu.first_lcd_pixel_cycles
+#define g_seen_lcd_nonblack g_emu.seen_lcd_nonblack
+#define g_first_lcd_nonblack_x g_emu.first_lcd_nonblack_x
+#define g_first_lcd_nonblack_y g_emu.first_lcd_nonblack_y
+#define g_first_lcd_nonblack_rgb g_emu.first_lcd_nonblack_rgb
+#define g_first_lcd_nonblack_pc g_emu.first_lcd_nonblack_pc
+#define g_first_lcd_nonblack_cycles g_emu.first_lcd_nonblack_cycles
+#define g_skip_tick_after_exception_return g_emu.skip_tick_after_exception_return
+#define g_resets_reset g_emu.resets_reset
+#define g_gpio_out g_emu.gpio_out
+#define g_gpio_oe g_emu.gpio_oe
+#define g_sio_dividend g_emu.sio_dividend
+#define g_sio_divisor g_emu.sio_divisor
+#define g_sio_quotient g_emu.sio_quotient
+#define g_sio_remainder g_emu.sio_remainder
+#define g_sio_div_signed g_emu.sio_div_signed
+#define g_sio_div_dirty g_emu.sio_div_dirty
+#define g_io_bank0 g_emu.io_bank0
+#define g_pads_bank0 g_emu.pads_bank0
+#define g_clocks g_emu.clocks
+#define g_xosc g_emu.xosc
+#define g_pll_sys g_emu.pll_sys
+#define g_pll_usb g_emu.pll_usb
+#define g_rtc g_emu.rtc
+#define g_uart0 g_emu.uart0
+#define g_xip_dr0_command g_emu.xip_dr0_command
+#define g_xip_dr0_reads g_emu.xip_dr0_reads
+#define g_lcd g_emu.lcd
+#define g_spi g_emu.spi
+#define g_i2c g_emu.i2c
+#define g_dma g_emu.dma
+#define g_core g_emu.core
+#define g_saved_termios g_emu.saved_termios
+#define g_saved_termios_valid g_emu.saved_termios_valid
+#define g_live_buffer g_emu.live_buffer
 
-typedef struct {
-    u32 cr0;
-    u32 cr1;
-    u32 cpsr;
-    u32 dmacr;
-    u32 last_rx;
-    u8 tx[SPI_FIFO_SIZE];
-    u8 rx[SPI_FIFO_SIZE];
-    int tx_head;
-    int tx_count;
-    int rx_head;
-    int rx_count;
-    int overrun;
-    u32 busy_until;
-} Spi;
+#define parse_trace_kinds(s, out_mask) emu_trace_parse_kinds((s), (out_mask))
+#define trace_text(s) emu_trace_text(&g_emu, (s))
+#define trace_enabled(kind) emu_trace_enabled(&g_emu, (kind))
+#define trace_hex32(value) emu_trace_hex32(&g_emu, (value))
+#define trace_pair(name, value) emu_trace_pair(&g_emu, (name), (value))
+#define trace_mmio(kind, addr, value) emu_trace_mmio(&g_emu, (kind), (addr), (value))
+#define trace_unknown_mmio(kind, addr, value, pc) emu_trace_unknown_mmio(&g_emu, (kind), (addr), (value), (pc))
+#define trace_xip_mmio(kind, addr, value) emu_trace_xip_mmio(&g_emu, (kind), (addr), (value))
+#define trace_branch(kind, pc, target, lr, op) emu_trace_branch(&g_emu, (kind), (pc), (target), (lr), (op))
+#define lcd_gpio_sync() emu_lcd_gpio_sync(&g_emu)
+#define lcd_spi_byte(byte) emu_lcd_spi_byte(&g_emu, (byte))
+#define boot2_stub_read8(addr, out_value) emu_boot2_stub_read8((addr), (out_value))
+#define boot2_stub_read16(addr, out_value) emu_boot2_stub_read16((addr), (out_value))
+#define boot2_stub_read32(addr, out_value) emu_boot2_stub_read32((addr), (out_value))
+#define bootrom_read8(addr, out_value) emu_bootrom_read8((addr), (out_value))
+#define bootrom_read16(addr, out_value) emu_bootrom_read16((addr), (out_value))
+#define bootrom_read32(addr, out_value) emu_bootrom_read32((addr), (out_value))
+#define bootrom_lookup_call(cpu, return_pc) emu_bootrom_lookup_call(&g_emu, (cpu), (return_pc))
+#define bootrom_function_call(cpu, target, return_pc) emu_bootrom_function_call(&g_emu, (cpu), (target), (return_pc), &g_bootrom_mem_ops, 0)
+#define flash_offset(addr, out_off) emu_mem_flash_offset(&g_emu, (addr), (out_off))
+#define ram_offset(addr, out_off) emu_mem_ram_offset(&g_emu, (addr), (out_off))
+#define executable_addr(addr) emu_mem_executable_addr(&g_emu, (addr))
+#define mem_read32(addr) emu_mem_read32(&g_emu, &g_mem_mmio_ops, 0, (addr))
+#define mem_read16(addr) emu_mem_read16(&g_emu, &g_mem_mmio_ops, 0, (addr))
+#define mem_read8(addr) emu_mem_read8(&g_emu, &g_mem_mmio_ops, 0, (addr))
+#define mem_write32(addr, value) emu_mem_write32(&g_emu, &g_mem_mmio_ops, 0, (addr), (value))
+#define mem_write16(addr, value) emu_mem_write16(&g_emu, &g_mem_mmio_ops, 0, (addr), (value))
+#define mem_write8(addr, value) emu_mem_write8(&g_emu, &g_mem_mmio_ops, 0, (addr), (value))
+#define flash_fill_erased() emu_mem_flash_fill_erased(&g_emu)
 
-typedef struct {
-    u32 con;
-    u32 tar;
-    u32 enable;
-    u32 fs_hcnt;
-    u32 fs_lcnt;
-    u32 sda_hold;
-    u32 fs_spklen;
-    u32 rx_tl;
-    u32 tx_tl;
-    u32 dma_cr;
-    u32 tx_abrt;
-    u32 raw_intr;
-    u8 selected_reg;
-    u8 rx[8];
-    int rx_head;
-    int rx_count;
-    int tx_level;
-    int tx_overflow;
-    int key_report_index;
-    int key_report_key;
-    u32 busy_until;
-} I2c;
+static u32 mem_mmio_read32(void *ctx, u32 addr);
+static void mem_mmio_write32(void *ctx, u32 addr, u32 value);
+static u8 bootrom_mem_read8(void *ctx, u32 addr);
+static u32 bootrom_mem_read32(void *ctx, u32 addr);
+static void bootrom_mem_write8(void *ctx, u32 addr, u32 value);
+static void bootrom_mem_write32(void *ctx, u32 addr, u32 value);
 
-typedef struct {
-    u32 read_addr;
-    u32 write_addr;
-    u32 transfer_count;
-    u32 ctrl_trig;
-} DmaChannel;
+static const EmuMemMmioOps g_mem_mmio_ops = {
+    mem_mmio_read32,
+    mem_mmio_write32
+};
 
-typedef struct {
-    u32 vtor;
-    u32 icsr;
-    u32 nvic_enable;
-    u32 nvic_pending;
-    u32 syst_csr;
-    u32 syst_rvr;
-    u32 syst_cvr;
-} Core;
-
-static Lcd g_lcd;
-static Spi g_spi;
-static I2c g_i2c;
-static DmaChannel g_dma[12];
-static Core g_core;
-static Termios g_saved_termios;
-static int g_saved_termios_valid;
-static char g_live_buffer[LIVE_ROWS * LIVE_COLS * 32u + 256u];
-
-static void lcd_spi_byte(u8 byte);
-static u32 mem_read32(u32 addr);
-static u16 mem_read16(u32 addr);
-static u8 mem_read8(u32 addr);
-static void mem_write32(u32 addr, u32 value);
-static void mem_write16(u32 addr, u32 value);
-static void mem_write8(u32 addr, u32 value);
-
-static int token_eq(const char *start, usize len, const char *word) {
-    usize i;
-    for (i = 0; i < len; ++i) {
-        if (word[i] == 0 || start[i] != word[i]) return 0;
-    }
-    return word[len] == 0;
-}
-
-static int parse_trace_kinds(const char *s, u32 *out_mask) {
-    u32 mask = 0;
-    usize start = 0;
-    usize pos = 0;
-    while (1) {
-        char ch = s[pos];
-        if (ch == ',' || ch == '+' || ch == 0) {
-            usize len = pos - start;
-            if (len == 0u) return 0;
-            if (token_eq(s + start, len, "base")) mask |= TRACE_BASE;
-            else if (token_eq(s + start, len, "calls")) mask |= TRACE_CALLS;
-            else if (token_eq(s + start, len, "unknown-mmio")) mask |= TRACE_UNKNOWN_MMIO;
-            else if (token_eq(s + start, len, "xip")) mask |= TRACE_XIP;
-            else if (token_eq(s + start, len, "all")) mask |= TRACE_BASE | TRACE_CALLS | TRACE_UNKNOWN_MMIO | TRACE_XIP;
-            else return 0;
-            if (ch == 0) break;
-            start = pos + 1u;
-        }
-        pos += 1u;
-    }
-    *out_mask = mask;
-    return 1;
-}
+static const EmuBootromMemOps g_bootrom_mem_ops = {
+    bootrom_mem_read8,
+    bootrom_mem_read32,
+    bootrom_mem_write8,
+    bootrom_mem_write32
+};
 
 static void append_char(char *buf, usize *pos, usize cap, char ch) {
     if (*pos + 1u < cap) buf[(*pos)++] = ch;
@@ -624,35 +507,6 @@ static void terminal_render_live(void) {
     (void)sys_write(1, g_live_buffer, pos);
 }
 
-static void trace_text(const char *s) {
-    if (g_trace_fd < 0 || g_trace_mask == 0u) return;
-    (void)sys_write(g_trace_fd, s, str_len(s));
-}
-
-static int trace_enabled(u32 kind) {
-    return g_trace_fd >= 0 && (g_trace_mask & kind) != 0u;
-}
-
-static void trace_hex32(u32 value) {
-    char buf[10];
-    int i;
-    if (g_trace_fd < 0 || g_trace_mask == 0u) return;
-    buf[0] = '0';
-    buf[1] = 'x';
-    for (i = 0; i < 8; ++i) {
-        u32 nibble = (value >> (28 - i * 4)) & 15u;
-        buf[2 + i] = (char)(nibble < 10u ? '0' + nibble : 'a' + nibble - 10u);
-    }
-    (void)sys_write(g_trace_fd, buf, sizeof(buf));
-}
-
-static void trace_pair(const char *name, u32 value) {
-    if (g_trace_fd < 0 || g_trace_mask == 0u) return;
-    trace_text(name);
-    trace_text("=");
-    trace_hex32(value);
-}
-
 static int load_key_file(const char *path) {
     long fd = sys_openat(AT_FDCWD, path, O_RDONLY, 0);
     usize off = 0;
@@ -695,112 +549,6 @@ static int next_script_key(void) {
         return (hi << 4) | lo;
     }
     return (unsigned char)ch;
-}
-
-static u32 read_le32(const u8 *p) {
-    return (u32)p[0] | ((u32)p[1] << 8) | ((u32)p[2] << 16) | ((u32)p[3] << 24);
-}
-
-static u16 read_le16(const u8 *p) {
-    return (u16)((u16)p[0] | ((u16)p[1] << 8));
-}
-
-static void write_le32(u8 *p, u32 value) {
-    p[0] = (u8)value;
-    p[1] = (u8)(value >> 8);
-    p[2] = (u8)(value >> 16);
-    p[3] = (u8)(value >> 24);
-}
-
-static int flash_offset(u32 addr, usize *out_off) {
-    if (addr < FLASH_BASE) return 0;
-    *out_off = (usize)(addr - FLASH_BASE);
-    return *out_off < sizeof(g_flash);
-}
-
-static int boot2_stub_read8(u32 addr, u8 *out_value) {
-    u32 shift;
-    if (addr < BOOT2_BASE || addr >= BOOT2_BASE + BOOT2_SIZE) return 0;
-    shift = (addr & 3u) * 8u;
-    *out_value = (u8)(0x47704770u >> shift);
-    return 1;
-}
-
-static int boot2_stub_read16(u32 addr, u16 *out_value) {
-    u8 lo;
-    u8 hi;
-    if ((addr & 1u) != 0u) return 0;
-    if (!boot2_stub_read8(addr, &lo)) return 0;
-    if (!boot2_stub_read8(addr + 1u, &hi)) return 0;
-    *out_value = (u16)((u16)lo | ((u16)hi << 8));
-    return 1;
-}
-
-static int boot2_stub_read32(u32 addr, u32 *out_value) {
-    if (addr < BOOT2_BASE || addr >= BOOT2_BASE + BOOT2_SIZE || (addr & 3u) != 0u) return 0;
-    *out_value = 0x47704770u;
-    return 1;
-}
-
-static int ram_offset(u32 addr, usize *out_off) {
-    if (addr < RAM_BASE) return 0;
-    *out_off = (usize)(addr - RAM_BASE);
-    return *out_off < RAM_SIZE;
-}
-
-static int executable_addr(u32 addr) {
-    usize off;
-    if ((addr & 1u) != 0u) return 0;
-    if (flash_offset(addr, &off) && off + 2u <= sizeof(g_flash)) return 1;
-    if (ram_offset(addr, &off) && off + 2u <= RAM_SIZE) return 1;
-    return 0;
-}
-
-static int bootrom_read8(u32 addr, u8 *out_value) {
-    u32 value;
-    u32 sf_off;
-    if (addr == 0x13u) { *out_value = 1u; return 1; }
-    if (addr >= BOOTROM_SD_TABLE - 2u && addr < BOOTROM_SD_TABLE + 128u) { *out_value = 0; return 1; }
-    if (addr >= BOOTROM_SF_TABLE - 2u && addr < BOOTROM_SF_TABLE + 128u) {
-        value = 0;
-        if (addr >= BOOTROM_SF_TABLE) {
-            sf_off = (addr - BOOTROM_SF_TABLE) & ~3u;
-            if (sf_off == 0x00u) value = BOOTROM_FN_FADD | 1u;
-            else if (sf_off == 0x04u) value = BOOTROM_FN_FSUB | 1u;
-            else if (sf_off == 0x08u) value = BOOTROM_FN_FMUL | 1u;
-            else if (sf_off == 0x0cu) value = BOOTROM_FN_FDIV | 1u;
-            else if (sf_off == 0x24u) value = BOOTROM_FN_F2I | 1u;
-        }
-        *out_value = (u8)(value >> (((addr - BOOTROM_SF_TABLE) & 3u) * 8u));
-        return 1;
-    }
-    if (addr >= 0x14u && addr < 0x1cu) {
-        u32 base;
-        if (addr < 0x16u) { value = BOOTROM_FUNC_TABLE; base = 0x14u; }
-        else if (addr < 0x18u) { value = BOOTROM_DATA_TABLE; base = 0x16u; }
-        else { value = BOOTROM_LOOKUP_ADDR | 1u; base = 0x18u; }
-        *out_value = (u8)(value >> ((addr - base) * 8u));
-        return 1;
-    }
-    return 0;
-}
-
-static int bootrom_read16(u32 addr, u16 *out_value) {
-    u8 lo;
-    u8 hi;
-    if (!bootrom_read8(addr, &lo)) return 0;
-    if (!bootrom_read8(addr + 1u, &hi)) return 0;
-    *out_value = (u16)((u16)lo | ((u16)hi << 8));
-    return 1;
-}
-
-static int bootrom_read32(u32 addr, u32 *out_value) {
-    u16 lo;
-    u16 hi;
-    if (!bootrom_read16(addr, &lo)) return 0;
-    if (!bootrom_read16(addr + 2u, &hi)) return 0;
-    *out_value = (u32)lo | ((u32)hi << 16);
-    return 1;
 }
 
 static int register_bank_read(u32 addr, u32 base, u32 size, u32 *bank, u32 *out_value) {
@@ -870,47 +618,6 @@ static int clock_write32(u32 addr, u32 value) {
     return 0;
 }
 
-static void trace_mmio(const char *kind, u32 addr, u32 value) {
-    if (!trace_enabled(TRACE_BASE)) return;
-    trace_text(kind);
-    trace_text(" ");
-    trace_pair("addr", addr);
-    trace_text(" ");
-    trace_pair("value", value);
-    trace_text(" cycles=");
-    trace_hex32(g_cycles);
-    trace_text("\n");
-}
-
-static void trace_unknown_mmio(const char *kind, u32 addr, u32 value, u32 pc) {
-    if (!trace_enabled(TRACE_UNKNOWN_MMIO)) return;
-    if (pc == 0u) pc = g_current_pc;
-    trace_text(kind);
-    trace_text(" ");
-    trace_pair("addr", addr);
-    trace_text(" ");
-    trace_pair("value", value);
-    trace_text(" ");
-    trace_pair("pc", pc);
-    trace_text(" cycles=");
-    trace_hex32(g_cycles);
-    trace_text("\n");
-}
-
-static void trace_xip_mmio(const char *kind, u32 addr, u32 value) {
-    if (!trace_enabled(TRACE_XIP)) return;
-    trace_text(kind);
-    trace_text(" ");
-    trace_pair("addr", addr);
-    trace_text(" ");
-    trace_pair("value", value);
-    trace_text(" ");
-    trace_pair("pc", g_current_pc);
-    trace_text(" cycles=");
-    trace_hex32(g_cycles);
-    trace_text("\n");
-}
-
 static u32 xip_dr0_read(void) {
     static const u8 unique_id[8] = { 0x4du, 0x53u, 0x50u, 0x43u, 0x41u, 0x4cu, 0x43u, 0x01u };
     u32 value = 0;
@@ -930,169 +637,8 @@ static void xip_dr0_write(u32 value) {
     trace_xip_mmio("xipw", XIP_SSI_DR0, value);
 }
 
-static void trace_branch(const char *kind, u32 pc, u32 target, u32 lr, u16 op) {
-    if (!trace_enabled(TRACE_CALLS)) return;
-    trace_text(kind);
-    trace_text(" ");
-    trace_pair("pc", pc);
-    trace_text(" ");
-    trace_pair("target", target);
-    trace_text(" ");
-    trace_pair("lr", lr);
-    trace_text(" ");
-    trace_pair("op", (u32)op);
-    trace_text(" cycles=");
-    trace_hex32(g_cycles);
-    trace_text("\n");
-}
-
-static int bootrom_lookup_call(Cpu *cpu, u32 return_pc) {
-    u32 table = cpu->r[0];
-    u32 code = cpu->r[1] & 0xffffu;
-    u32 result = 0;
-    if (table == BOOTROM_DATA_TABLE) {
-        if (code == ROM_CODE_SD) result = BOOTROM_SD_TABLE;
-        else if (code == ROM_CODE_SF) result = BOOTROM_SF_TABLE;
-    } else if (table == BOOTROM_FUNC_TABLE) {
-        if (code == ROM_CODE_L3) result = BOOTROM_FN_L3 | 1u;
-        else if (code == ROM_CODE_P3) result = BOOTROM_FN_P3 | 1u;
-        else if (code == ROM_CODE_R3) result = BOOTROM_FN_R3 | 1u;
-        else if (code == ROM_CODE_T3) result = BOOTROM_FN_T3 | 1u;
-        else if (code == ROM_CODE_MS) result = BOOTROM_FN_MS | 1u;
-        else if (code == ROM_CODE_MC) result = BOOTROM_FN_MC | 1u;
-        else if (code == ROM_CODE_S4) result = BOOTROM_FN_S4 | 1u;
-        else if (code == ROM_CODE_C4) result = BOOTROM_FN_C4 | 1u;
-        else if (code == ROM_CODE_IF) result = BOOTROM_FN_IF | 1u;
-        else if (code == ROM_CODE_EX) result = BOOTROM_FN_EX | 1u;
-        else if (code == ROM_CODE_FC) result = BOOTROM_FN_FC | 1u;
-        else if (code == ROM_CODE_RE) result = BOOTROM_FN_RE | 1u;
-        else if (code == ROM_CODE_RP) result = BOOTROM_FN_RP | 1u;
-    }
-    cpu->r[0] = result;
-    cpu->r[15] = return_pc;
-    if (trace_enabled(TRACE_CALLS)) {
-        trace_text("bootrom lookup table="); trace_hex32(table);
-        trace_text(" code="); trace_hex32(code);
-        trace_text(" result="); trace_hex32(result);
-        trace_text("\n");
-    }
-    return 1;
-}
-
-static u32 count_leading_zeroes(u32 value) {
-    u32 count = 0;
-    u32 bit = 0x80000000u;
-    while (bit != 0u && (value & bit) == 0u) { count += 1u; bit >>= 1; }
-    return count;
-}
-
-static u32 count_trailing_zeroes(u32 value) {
-    u32 count = 0;
-    u32 bit = 1u;
-    while (bit != 0u && (value & bit) == 0u) { count += 1u; bit <<= 1; }
-    return count;
-}
-
-static u32 count_bits(u32 value) {
-    u32 count = 0;
-    while (value != 0u) { count += value & 1u; value >>= 1; }
-    return count;
-}
-
 static u32 timer_us_low(void) {
     return g_cycles / TIMER_CYCLES_PER_US;
-}
-
-static u32 reverse_bits(u32 value) {
-    u32 out_value = 0;
-    int i;
-    for (i = 0; i < 32; ++i) {
-        out_value = (out_value << 1) | (value & 1u);
-        value >>= 1;
-    }
-    return out_value;
-}
-
-static float bits_to_float(u32 value) {
-    union { u32 u; float f; } conv;
-    conv.u = value;
-    return conv.f;
-}
-
-static u32 float_to_bits(float value) {
-    union { float f; u32 u; } conv;
-    conv.f = value;
-    return conv.u;
-}
-
-static int bootrom_function_call(Cpu *cpu, u32 target, u32 return_pc) {
-    u32 dst;
-    u32 src;
-    u32 len;
-    u32 i;
-    if (target == BOOTROM_FN_L3) cpu->r[0] = count_leading_zeroes(cpu->r[0]);
-    else if (target == BOOTROM_FN_P3) cpu->r[0] = count_bits(cpu->r[0]);
-    else if (target == BOOTROM_FN_R3) cpu->r[0] = reverse_bits(cpu->r[0]);
-    else if (target == BOOTROM_FN_T3) cpu->r[0] = count_trailing_zeroes(cpu->r[0]);
-    else if (target == BOOTROM_FN_MS || target == BOOTROM_FN_S4) {
-        dst = cpu->r[0];
-        len = cpu->r[2];
-        if (target == BOOTROM_FN_S4) {
-            for (i = 0; i < len; i += 4u) mem_write32(dst + i, cpu->r[1]);
-        } else {
-            for (i = 0; i < len; ++i) mem_write8(dst + i, cpu->r[1]);
-        }
-    } else if (target == BOOTROM_FN_MC || target == BOOTROM_FN_C4) {
-        dst = cpu->r[0];
-        src = cpu->r[1];
-        len = cpu->r[2];
-        if (target == BOOTROM_FN_C4) {
-            for (i = 0; i < len; i += 4u) mem_write32(dst + i, mem_read32(src + i));
-        } else {
-            for (i = 0; i < len; ++i) mem_write8(dst + i, mem_read8(src + i));
-        }
-    } else if (target == BOOTROM_FN_RE) {
-        usize flash_off = (usize)cpu->r[0];
-        len = cpu->r[1];
-        if (flash_off < sizeof(g_flash)) {
-            usize limit = flash_off + len;
-            if (limit > sizeof(g_flash) || limit < flash_off) limit = sizeof(g_flash);
-            for (i = (u32)flash_off; i < limit; ++i) g_flash[i] = 0xffu;
-        }
-        cpu->r[0] = 0;
-    } else if (target == BOOTROM_FN_RP) {
-        usize flash_off = (usize)cpu->r[0];
-        src = cpu->r[1];
-        len = cpu->r[2];
-        if (flash_off < sizeof(g_flash)) {
-            usize limit = flash_off + len;
-            if (limit > sizeof(g_flash) || limit < flash_off) limit = sizeof(g_flash);
-            for (i = 0; flash_off + i < limit; ++i) g_flash[flash_off + i] &= mem_read8(src + i);
-        }
-        cpu->r[0] = 0;
-    } else if (target == BOOTROM_FN_IF || target == BOOTROM_FN_EX || target == BOOTROM_FN_FC) {
-        cpu->r[0] = 0;
-    } else if (target == BOOTROM_FN_FADD) {
-        cpu->r[0] = float_to_bits(bits_to_float(cpu->r[0]) + bits_to_float(cpu->r[1]));
-    } else if (target == BOOTROM_FN_FSUB) {
-        cpu->r[0] = float_to_bits(bits_to_float(cpu->r[0]) - bits_to_float(cpu->r[1]));
-    } else if (target == BOOTROM_FN_FMUL) {
-        cpu->r[0] = float_to_bits(bits_to_float(cpu->r[0]) * bits_to_float(cpu->r[1]));
-    } else if (target == BOOTROM_FN_FDIV) {
-        cpu->r[0] = float_to_bits(bits_to_float(cpu->r[0]) / bits_to_float(cpu->r[1]));
-    } else if (target == BOOTROM_FN_F2I) {
-        cpu->r[0] = (u32)(s32)bits_to_float(cpu->r[0]);
-    } else return 0;
-    cpu->r[15] = return_pc;
-    if (trace_enabled(TRACE_CALLS)) {
-        trace_text("bootrom fn target="); trace_hex32(target);
-        trace_text(" r0="); trace_hex32(cpu->r[0]);
-        trace_text(" r1="); trace_hex32(cpu->r[1]);
-        trace_text(" r2="); trace_hex32(cpu->r[2]);
-        trace_text(" return="); trace_hex32(return_pc);
-        trace_text("\n");
-    }
-    return 1;
 }
 
 static void spi_rx_push(u8 byte) {
@@ -1359,159 +905,6 @@ static void sio_div_update(void) {
     }
 }
 
-static void lcd_set_pixel(int x, int y, u8 r, u8 g, u8 b) {
-    usize off;
-    u32 rgb;
-    if (x < 0 || y < 0 || x >= LCD_W || y >= LCD_H) return;
-    rgb = ((u32)r << 16) | ((u32)g << 8) | (u32)b;
-    if (!g_seen_lcd_pixel) {
-        g_seen_lcd_pixel = 1;
-        g_first_lcd_pixel_x = (u32)x;
-        g_first_lcd_pixel_y = (u32)y;
-        g_first_lcd_pixel_rgb = rgb;
-        g_first_lcd_pixel_pc = g_current_pc;
-        g_first_lcd_pixel_cycles = g_cycles;
-    }
-    if (rgb != 0u && !g_seen_lcd_nonblack) {
-        g_seen_lcd_nonblack = 1;
-        g_first_lcd_nonblack_x = (u32)x;
-        g_first_lcd_nonblack_y = (u32)y;
-        g_first_lcd_nonblack_rgb = rgb;
-        g_first_lcd_nonblack_pc = g_current_pc;
-        g_first_lcd_nonblack_cycles = g_cycles;
-    }
-    off = ((usize)y * LCD_W + (usize)x) * 3u;
-    g_framebuffer[off] = r;
-    g_framebuffer[off + 1u] = g;
-    g_framebuffer[off + 2u] = b;
-}
-
-static int param_be16(int off) {
-    return ((int)g_lcd.params[off] << 8) | (int)g_lcd.params[off + 1];
-}
-
-static int lcd_expected_params(u8 command) {
-    if (command == 0x2au || command == 0x2bu) return 4;
-    if (command == 0x36u || command == 0x3au) return 1;
-    if (command == 0x33u) return 6;
-    if (command == 0x37u) return 2;
-    if (command == 0xb1u || command == 0xc0u) return 2;
-    if (command == 0xb6u || command == 0xc5u) return 3;
-    if (command == 0xf7u) return 4;
-    if (command == 0xb4u || command == 0xb7u || command == 0xc1u || command == 0xc7u) return 1;
-    if (command == 0xe0u || command == 0xe1u) return 15;
-    return 0;
-}
-
-static void lcd_apply_params(void) {
-    if (g_lcd.command == 0x2au) {
-        g_lcd.x0 = param_be16(0);
-        g_lcd.x1 = param_be16(2);
-    } else if (g_lcd.command == 0x2bu) {
-        g_lcd.y0 = param_be16(0);
-        g_lcd.y1 = param_be16(2);
-    } else if (g_lcd.command == 0x36u) {
-        g_lcd.madctl = g_lcd.params[0];
-    } else if (g_lcd.command == 0x3au) {
-        g_lcd.colmod = g_lcd.params[0];
-    }
-    if (g_trace_fd >= 0) {
-        trace_text("lcd params cmd="); trace_hex32(g_lcd.command);
-        trace_text(" count="); trace_hex32((u32)g_lcd.param_count);
-        if (g_lcd.command == 0x2au) {
-            trace_text(" x0="); trace_hex32((u32)g_lcd.x0);
-            trace_text(" x1="); trace_hex32((u32)g_lcd.x1);
-        } else if (g_lcd.command == 0x2bu) {
-            trace_text(" y0="); trace_hex32((u32)g_lcd.y0);
-            trace_text(" y1="); trace_hex32((u32)g_lcd.y1);
-        } else if (g_lcd.command == 0x36u) {
-            trace_text(" madctl="); trace_hex32((u32)g_lcd.madctl);
-        } else if (g_lcd.command == 0x3au) {
-            trace_text(" colmod="); trace_hex32((u32)g_lcd.colmod);
-        }
-        trace_text("\n");
-    }
-}
-
-static void lcd_gpio_sync(void) {
-    g_lcd.cs = (g_gpio_out & (1u << LCD_CS_PIN)) != 0u;
-    g_lcd.dc = (g_gpio_out & (1u << LCD_DC_PIN)) != 0u;
-}
-
-static void lcd_data(u8 byte) {
-    int expected = lcd_expected_params(g_lcd.command);
-    int pixel_bytes = g_lcd.colmod == 0x55u ? 2 : 3;
-    if (expected > 0) {
-        if (g_lcd.param_count < (int)sizeof(g_lcd.params)) g_lcd.params[g_lcd.param_count++] = byte;
-        if (g_lcd.param_count == expected) lcd_apply_params();
-        return;
-    }
-    if (g_lcd.command == 0x2cu) {
-        g_lcd.pixel[g_lcd.pixel_count++] = byte;
-        if (g_lcd.pixel_count == pixel_bytes) {
-            u8 red = g_lcd.pixel[0];
-            u8 green = g_lcd.pixel[1];
-            u8 blue = g_lcd.pixel[2];
-            if (pixel_bytes == 2) {
-                u16 rgb565 = (u16)(((u16)g_lcd.pixel[0] << 8) | g_lcd.pixel[1]);
-                red = (u8)((((rgb565 >> 11) & 0x1fu) * 255u + 15u) / 31u);
-                green = (u8)((((rgb565 >> 5) & 0x3fu) * 255u + 31u) / 63u);
-                blue = (u8)(((rgb565 & 0x1fu) * 255u + 15u) / 31u);
-            }
-            lcd_set_pixel(g_lcd.x, g_lcd.y, red, green, blue);
-            g_frame_hash = (g_frame_hash * 16777619u) ^ ((u32)red << 16) ^ ((u32)green << 8) ^ blue;
-            g_lcd.pixel_count = 0;
-            g_lcd.x += 1;
-            if (g_lcd.x > g_lcd.x1) {
-                g_lcd.x = g_lcd.x0;
-                g_lcd.y += 1;
-                if (g_lcd.y > g_lcd.y1) g_lcd.y = g_lcd.y0;
-            }
-        }
-    }
-}
-
-static void lcd_command(u8 command) {
-    g_lcd.command = command;
-    g_lcd.param_count = 0;
-    g_lcd.pixel_count = 0;
-    if (!g_seen_lcd_command) {
-        g_seen_lcd_command = 1;
-        g_first_lcd_command = command;
-        g_first_lcd_command_pc = g_current_pc;
-        g_first_lcd_command_cycles = g_cycles;
-    }
-    if (g_trace_fd >= 0) {
-        trace_text("lcd cmd="); trace_hex32(command); trace_text(" cycles="); trace_hex32(g_cycles); trace_text("\n");
-    }
-    if (command == 0x2cu) {
-        g_lcd.x = g_lcd.x0;
-        g_lcd.y = g_lcd.y0;
-    } else if (command == 0x10u) {
-        g_lcd.sleep = 1;
-    } else if (command == 0x11u) {
-        g_lcd.sleep = 0;
-    } else if (command == 0x20u) {
-        g_lcd.invert = 0;
-    } else if (command == 0x21u) {
-        g_lcd.invert = 1;
-    } else if (command == 0x28u) {
-        g_lcd.display_on = 0;
-    } else if (command == 0x29u) {
-        g_lcd.display_on = 1;
-    } else if (command == 0x01u) {
-        g_lcd.sleep = 1;
-        g_lcd.display_on = 0;
-        g_lcd.invert = 0;
-        g_lcd.madctl = 0;
-        g_lcd.colmod = 0;
-        g_lcd.x0 = 0;
-        g_lcd.x1 = LCD_W - 1;
-        g_lcd.y0 = 0;
-        g_lcd.y1 = LCD_H - 1;
-    }
-}
-
 static void mmio_write32(u32 addr, u32 value) {
     u32 spi_reg;
     u32 spi_alias;
@@ -1608,68 +1001,34 @@ static void mmio_write32(u32 addr, u32 value) {
     trace_unknown_mmio("mmiow", addr, value, 0u);
 }
 
-static void lcd_spi_byte(u8 byte) {
-    if (g_lcd.cs != 0) return;
-    if (g_lcd.dc == 0) lcd_command(byte);
-    else lcd_data(byte);
-}
-
-static u32 mem_read32(u32 addr) {
-    usize off;
-    u32 value;
-    if (ram_offset(addr, &off) && off + 4u <= RAM_SIZE) return read_le32(g_ram + off);
-    if (boot2_stub_read32(addr, &value)) return value;
-    if (flash_offset(addr, &off) && off + 4u <= sizeof(g_flash)) return read_le32(g_flash + off);
-    if (bootrom_read32(addr, &value)) return value;
+static u32 mem_mmio_read32(void *ctx, u32 addr) {
+    (void)ctx;
     return mmio_read32(addr);
 }
 
-static u16 mem_read16(u32 addr) {
-    usize off;
-    u16 value;
-    if (ram_offset(addr, &off) && off + 2u <= RAM_SIZE) return read_le16(g_ram + off);
-    if (boot2_stub_read16(addr, &value)) return value;
-    if (flash_offset(addr, &off) && off + 2u <= sizeof(g_flash)) return read_le16(g_flash + off);
-    if (bootrom_read16(addr, &value)) return value;
-    return (u16)mem_read32(addr);
-}
-
-static u8 mem_read8(u32 addr) {
-    usize off;
-    u8 value;
-    if (ram_offset(addr, &off) && off < RAM_SIZE) return g_ram[off];
-    if (boot2_stub_read8(addr, &value)) return value;
-    if (flash_offset(addr, &off) && off < sizeof(g_flash)) return g_flash[off];
-    if (bootrom_read8(addr, &value)) return value;
-    return (u8)mem_read32(addr);
-}
-
-static void mem_write32(u32 addr, u32 value) {
-    usize off;
-    if (ram_offset(addr, &off) && off + 4u <= RAM_SIZE) {
-        write_le32(g_ram + off, value);
-        return;
-    }
+static void mem_mmio_write32(void *ctx, u32 addr, u32 value) {
+    (void)ctx;
     mmio_write32(addr, value);
 }
 
-static void mem_write16(u32 addr, u32 value) {
-    usize off;
-    if (ram_offset(addr, &off) && off + 2u <= RAM_SIZE) {
-        g_ram[off] = (u8)value;
-        g_ram[off + 1u] = (u8)(value >> 8);
-        return;
-    }
-    mmio_write32(addr, value & 0xffffu);
+static u8 bootrom_mem_read8(void *ctx, u32 addr) {
+    (void)ctx;
+    return mem_read8(addr);
 }
 
-static void mem_write8(u32 addr, u32 value) {
-    usize off;
-    if (ram_offset(addr, &off) && off < RAM_SIZE) {
-        g_ram[off] = (u8)value;
-        return;
-    }
-    mmio_write32(addr, value & 0xffu);
+static u32 bootrom_mem_read32(void *ctx, u32 addr) {
+    (void)ctx;
+    return mem_read32(addr);
+}
+
+static void bootrom_mem_write8(void *ctx, u32 addr, u32 value) {
+    (void)ctx;
+    mem_write8(addr, value);
+}
+
+static void bootrom_mem_write32(void *ctx, u32 addr, u32 value) {
+    (void)ctx;
+    mem_write32(addr, value);
 }
 
 static void set_nz(Cpu *cpu, u32 value) {
@@ -1763,11 +1122,6 @@ static int cond_true(Cpu *cpu, int cond) {
         case 14: return 1;
     }
     return 0;
-}
-
-static u32 sx(u32 value, int bits) {
-    u32 sign = 1u << (bits - 1);
-    return (value ^ sign) - sign;
 }
 
 static int try_accelerate_delay_loop(Cpu *cpu) {
@@ -2408,12 +1762,6 @@ static int step(Cpu *cpu) {
     return -1;
 }
 
-static void flash_fill_erased(void) {
-    usize i;
-    for (i = 0; i < sizeof(g_flash); ++i) g_flash[i] = 0xffu;
-    g_flash_size = APP_FLASH_OFFSET;
-}
-
 static void load_flash_state(const char *path) {
     long fd = sys_openat(AT_FDCWD, path, O_RDONLY, 0);
     usize off = 0;
@@ -2533,13 +1881,15 @@ static void write_frame_output(const char *image_path) {
     }
 }
 
-static int run_bin(const char *in_path, const char *image_path, const char *key_script, int target_frames) {
-    Cpu cpu;
-    u32 sp;
-    u32 reset;
+static void cpu_reset(Cpu *cpu) {
     int i;
-    for (i = 0; i < 16; ++i) cpu.r[i] = 0;
-    cpu.n = cpu.z = cpu.c = cpu.v = cpu.primask = cpu.ipsr = cpu.steps = 0;
+    for (i = 0; i < 16; ++i) cpu->r[i] = 0;
+    cpu->n = cpu->z = cpu->c = cpu->v = cpu->primask = cpu->ipsr = cpu->steps = 0;
+}
+
+static void emulator_reset(Cpu *cpu, const char *key_script, int target_frames) {
+    int i;
+    cpu_reset(cpu);
     g_lcd.dc = 1;
     g_lcd.cs = 1;
     g_lcd.sleep = 1;
@@ -2644,6 +1994,13 @@ static int run_bin(const char *in_path, const char *image_path, const char *key_
     g_gif_active = 0;
     g_gif_fd = -1;
     lcd_gpio_sync();
+}
+
+static int run_bin(const char *in_path, const char *image_path, const char *key_script, int target_frames) {
+    Cpu cpu;
+    u32 sp;
+    u32 reset;
+    emulator_reset(&cpu, key_script, target_frames);
     if (str_eq(key_script == 0 ? "" : key_script, "-")) {
         long flags = sys_fcntl(0, F_GETFL, 0);
         if (flags >= 0) (void)sys_fcntl(0, F_SETFL, flags | O_NONBLOCK);

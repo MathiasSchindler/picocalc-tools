@@ -92,7 +92,7 @@ static long sys_ioctl(int fd, unsigned long request, void *arg) {
     return result;
 }
 
-__attribute__((noreturn)) void sys_exit(int status) {
+static __attribute__((used, noreturn)) void sys_exit(int status) {
     register long n __asm__("rax") = 60;
     register long a0 __asm__("rdi") = status;
     __asm__ volatile("syscall" : : "a"(n), "r"(a0) : "rcx", "r11", "memory");
