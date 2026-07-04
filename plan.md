@@ -13,6 +13,7 @@ make -C /home/mathias/pico2 gui-hello gui-graphics gui-solve
 make -C /home/mathias/pico2 bin-emu-hello-trace bin-emu-graphics-frames
 make -C /home/mathias/pico2 emu-replay-manifest-check
 make -C /home/mathias/pico2 emu-deterministic-tests
+make -C /home/mathias/pico2 bare-picolink-all
 make -C /home/mathias/pico2 picolink-regression
 make -C /home/mathias/pico2 emu-vendor-probe
 ```
@@ -26,6 +27,7 @@ Validated firmware paths:
 - `build/bare/bare_solve_picolink.bin` is linked directly by `pico_link`, accepts the same scripted solve replay, and produces the same equation-solving framebuffer hash as `bare_solve.bin`.
 - `build/bare/bare_solve_core_picolink.bin` keeps ordinary equation solving while compiling out extended analysis modes; it validates with the same solve replay hash and is currently about `50432` bytes.
 - `build/bare-1bpp/bare_solve_core_1bpp_picolink.bin` uses the same core solve profile with a generated 1-bit font; it has a distinct expected framebuffer hash and is currently about `46292` bytes.
+- `make bare-picolink-all` builds every current SDK-free no-libc C firmware profile through `pico_link` as the final linker, including hello, keys, fixed solve, interactive solve, graphics, cube, benchmark, diagnostics, focused probes, and the optional solve profiles.
 - `build/bare/bare_benchmark.bin` produces `build/emu/bare_benchmark.png` with one-screen timing results for hardware/emulator comparison.
 - `build/bare/bare_diagnostics.bin` produces `build/emu/bare_diagnostics.png` with one-screen software-observable hardware diagnostics.
 - `build/bare/bare_interrupt_probe.bin`, `build/bare/bare_dma_probe.bin`, `build/bare/bare_thumb_probe.bin`, and `build/bare/bare_vendor_startup_probe.bin` exercise focused exception, DMA, Thumb decoder, and vendor-startup paths.
@@ -51,7 +53,8 @@ Validated firmware paths:
 | Trace output | Fully implemented | `--trace` writes to stderr and `--trace=path` writes a compact transaction-level log. `--trace-kinds=base,calls,unknown-mmio,xip|all` enables optional indirect branch/Boot ROM, unknown-MMIO, and XIP SSI diagnostics for vendor investigation. Current base trace events include LCD commands, I2C operations, DMA activity, exception entry/return, reset writes, and frame hashes. Raw SPI pixel bytes are intentionally not logged. |
 | LCD milestone reporting | Fully implemented | `--report-milestones` prints first LCD command, first framebuffer pixel write, and first nonblack pixel with PC and cycle context. `make emu-vendor-probe` enables it so each vendor binary reports whether it has reached display output. |
 | Deterministic replay/hash tests | Fully implemented | `make emu-deterministic-tests` runs hello, graphics, solve replay from `tests/solve_replay.keys`, interrupt, DMA, Thumb, and vendor-startup probe firmware with `--expect-hash=...`, failing if the final framebuffer hash changes. `tests/emu_replays.tsv` records the covered binaries, replay inputs, traces, outputs, and expected hashes. |
-| Pico_link map-symbol reports | Fully implemented | `--symbols=MAP` reads `pico_link` map files and annotates frame-ready, budget, crash, and LCD-milestone PC reports with nearest symbol names. `make picolink-regression` passes maps for the custom-linked cube, LTO cube, full solve, core solve, and 1-bit core solve images. |
+| Pico_link map-symbol reports | Fully implemented | `--symbols=MAP` reads `pico_link` map files and annotates frame-ready, budget, crash, and LCD-milestone PC reports with nearest symbol names. `make picolink-regression` passes maps for all current picolink firmware profiles. |
+| Project-profile picolink coverage | Fully implemented | `make bare-picolink-all` builds every current SDK-free no-libc C firmware profile through `pico_link`; `make picolink-regression` map-checks all of them and runs deterministic emulator hashes for stable screen-output profiles. Final ELF output, libc/newlib integration, linker scripts, C++ constructors, and automatic library search are outside this project's current firmware contract rather than missing emulator features. |
 | Focused interrupt probe firmware | Fully implemented | `src/picocalc/bare/interrupt_probe.c` verifies the minimal exception path with `SVC`, repeated `SysTick`, exception return, and NVIC IRQ0, and trace output records the entries/returns. |
 | Focused DMA probe firmware | Fully implemented | `src/picocalc/bare/dma_probe.c` transfers a generated RGB block to the LCD through DMA channel 0 writing SPI1 data MMIO, then verifies that path through deterministic hashes and DMA trace events. |
 | Focused Thumb probe firmware | Fully implemented | `src/picocalc/bare/thumb_probe.c` contains a small inline-assembly repro for the Cortex-M0+ `LDRH` immediate instruction, keeping decoder growth tied to a local firmware image. |

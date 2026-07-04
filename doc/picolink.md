@@ -16,7 +16,7 @@ make bare-cube-picolink
 
 `pico_link` links a small, fixed bare-metal PicoCalc/RP2040 profile. It reads ELF32 little-endian ARM relocatable `.o` files and writes a flat SD-app-style `.bin` image linked for the PicoCalc application address.
 
-It is not intended to be a general-purpose ELF linker. It exists so this repository can build PicoCalc firmware without depending on `arm-none-eabi-ld` and `arm-none-eabi-objcopy` for the final link-and-flatten stage.
+It is not intended to be a general-purpose ELF linker. Within this repository's no-libc C firmware model, it exists so PicoCalc `.bin` images can be built without depending on `arm-none-eabi-ld` and `arm-none-eabi-objcopy` for the final link-and-flatten stage.
 
 The current implementation is a no-libc Linux host program. It uses `_start`, direct Linux syscalls, static storage, and the shared `host_nolibc.h` helpers.
 
@@ -30,7 +30,7 @@ The current implementation is a no-libc Linux host program. It uses `_start`, di
 
 ## CURRENT CAPABILITIES
 
-`pico_link` currently supports the relocation and section surface used by the cube demo path:
+`pico_link` currently supports the relocation and section surface used by the current SDK-free PicoCalc firmware targets:
 
 - ELF32 little-endian ARM relocatable input files
 - allocatable `PROGBITS` and `NOBITS` sections
@@ -50,11 +50,12 @@ The current implementation is a no-libc Linux host program. It uses `_start`, di
 - optional reachability-ordered section layout for call-graph locality experiments
 - selective Unix `ar` archive input for small local runtime archives
 - GCC LTO handoff through `-flinker-output=nolto-rel` native relocatable objects
-- GCC relocatable runtime prelink handoff for larger firmware objects before final flattening
 - synthetic PicoCalc profile symbols for startup code: `__data_source`, `__data_start`, `__data_end`, `__bss_start`, `__bss_end`, `__StackTop`, and `__stack`
 - direct flat binary output
 
-The `bare-cube-picolink` and `bare-solve-picolink` targets also link local ARM EABI helper code through `build/bare/libpico_runtime.a`, instead of asking `pico_link` to read all of `libgcc.a`. The archive contains 32-bit division helpers, 64-bit integer multiply/divide/shift helpers, the Thumb-1 byte switch helper used by GCC, and local double conversion, comparison, addition, subtraction, multiplication, and division helpers. The 32-bit unsigned division core uses a normalized shift/subtract loop with early exits, and quotient-only calls have their own entry points so plain `/` does not need to compute the remainder path used by `/` plus `%`.
+The picolink firmware targets link local ARM EABI helper code through `build/bare/libpico_runtime.a`, instead of asking `pico_link` to read all of `libgcc.a`. The archive contains 32-bit division helpers, 64-bit integer multiply/divide/shift helpers, the Thumb-1 byte switch helper used by GCC, and local double conversion, comparison, addition, subtraction, multiplication, and division helpers. The 32-bit unsigned division core uses a normalized shift/subtract loop with early exits, and quotient-only calls have their own entry points so plain `/` does not need to compute the remainder path used by `/` plus `%`.
+
+`make bare-picolink-all` builds every current SDK-free PicoCalc firmware profile through `pico_link`: hello, keys, fixed solve, interactive solve, core solve, 1-bit-font core solve, graphics, cube, hybrid LTO cube, benchmark, diagnostics, interrupt probe, DMA probe, Thumb probe, AEABI double probe, and vendor-startup probe.
 
 ## MEMORY PROFILE
 
@@ -156,9 +157,9 @@ Run the focused `pico_link` regression checks:
 make picolink-regression
 ```
 
-This builds the current custom-linked cube, hybrid LTO cube, and solve images, runs emulator hash checks, uses map-aware PC reporting, and prints image-size comparisons.
+This builds the current custom-linked firmware images, runs emulator hash checks for deterministic profiles, uses map-aware PC reporting, checks startup symbols in every generated map, and prints image-size comparisons.
 
-The regression also checks each `pico_link` map with `tests/check_picolink_symbols.awk`, ensuring the synthetic startup symbols are present, unique, inside the PicoCalc profile ranges, and consistent with the emitted image size. The optional core solve image is included in this regression so its smaller feature profile keeps the same equation-solving replay hash.
+The regression checks each `pico_link` map with `tests/check_picolink_symbols.awk`, ensuring the synthetic startup symbols are present, unique, inside the PicoCalc profile ranges, and consistent with the emitted image size. It covers all current picolink firmware profiles; the keys image is map-checked and built, while deterministic screen-hash checks cover the profiles with stable emulator runs.
 
 Run the local double-helper probe:
 
@@ -207,7 +208,13 @@ This keeps `pico_link` dependency-free while still allowing GCC to perform cross
 
 Full GNU LTO also works for the solve firmware when the freestanding memory-helper object is compiled without LTO; `bare_solve_lto.bin` has been validated in both the emulator and on hardware. A full GNU LTO cube image builds and produces a smaller binary, but the current emulator does not complete its first-frame capture within the normal cube budget; the hybrid LTO object linked through `pico_link` does complete, matches the GNU cube framebuffer hash in the emulator, and runs on hardware.
 
-The non-LTO `bare-solve-picolink` target now links directly through `pico_link`. Integer division, 64-bit integer arithmetic, Thumb switch helpers, and double conversion/comparison/arithmetic helpers are supplied by the local PicoCalc runtime archive. `pico_link` remains profile-specific rather than a general-purpose linker. Size-oriented profile work should compare full solve, core solve, 1-bit font quality, and UI speed before removing any user-visible solve feature from the default image.
+The non-LTO `bare-solve-picolink` target now links directly through `pico_link`. Integer division, 64-bit integer arithmetic, Thumb switch helpers, and double conversion/comparison/arithmetic helpers are supplied by the local PicoCalc runtime archive. `pico_link` is now the final linker for every current SDK-free no-libc C firmware profile in this repository, while remaining deliberately profile-specific rather than a general-purpose linker. Size-oriented profile work should compare full solve, core solve, 1-bit font quality, and UI speed before removing any user-visible solve feature from the default image.
+
+## PROJECT CONTRACT
+
+For this project, `pico_link` is intended to link explicit ELF32 ARM relocatable C objects plus explicit local archives into PicoCalc SD-app `.bin` images for the fixed RP2040 memory profile. The intended firmware contract is C, no libc/newlib, no Pico SDK, no general linker script, no runtime constructors, and no final ELF artifact.
+
+Those omissions are part of the design rather than missing `ld` compatibility. Map files, link statistics, emulator symbol loading, deterministic framebuffer hashes, and hardware tests are the inspection and validation surface for this firmware model.
 
 ## LIMITATIONS
 
@@ -217,7 +224,6 @@ The non-LTO `bare-solve-picolink` target now links directly through `pico_link`.
 - archive support is intentionally narrow: it reads ordinary Unix `ar` members by simple names and extracts only members satisfying unresolved globals
 - library search paths are not implemented, so archive paths must be passed explicitly
 - no linker script parser is implemented
-- no final ELF, full symbol table dump, or debug metadata is emitted
 - raw `.gnu.lto*` objects are not consumed directly; use GCC's `nolto-rel` handoff for LTO input
 - garbage collection is profile-specific and simpler than GNU `--gc-sections`
 - relocation overflow checks are minimal outside Thumb call range validation

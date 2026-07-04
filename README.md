@@ -124,7 +124,15 @@ make bin-emu-solve-picolink
 make picolink-regression
 ```
 
-`bare-solve-picolink` writes `build/bare/bare_solve_picolink.bin` and validates with the same scripted solve framebuffer hash as the GNU-linked image. `picolink-regression` also checks map-file startup symbols and runs the cube, LTO cube, full solve, and optional core solve picolink images in the emulator.
+`bare-solve-picolink` writes `build/bare/bare_solve_picolink.bin` and validates with the same scripted solve framebuffer hash as the GNU-linked image. `picolink-regression` checks map-file startup symbols for every generated picolink image and runs deterministic emulator hash checks for the stable picolink profiles.
+
+All current SDK-free no-libc C firmware profiles can be built through `pico_link` as the final linker:
+
+```sh
+make bare-picolink-all
+```
+
+That target covers hello, keys, fixed solve, interactive solve, core solve, 1-bit-font core solve, graphics, cube, hybrid LTO cube, benchmark, diagnostics, interrupt probe, DMA probe, Thumb probe, AEABI double probe, and vendor-startup probe. This is a project-profile linker, not a general GNU `ld` clone: final ELF output, libc/newlib integration, linker scripts, C++ constructors, and automatic library search are intentionally outside the current firmware contract.
 
 Two size-oriented solve profiles are available for experiments:
 
@@ -199,6 +207,7 @@ The emulator also has optional diagnostic and capture modes:
 make bin-emu-hello-trace
 make bin-emu-graphics-frames
 make emu-deterministic-tests
+make bare-picolink-all
 make picolink-regression
 build/emu/bin_emu build/bare/bare_solve.bin build/emu/bare_solve.png @keys.txt
 build/emu/bin_emu build/bare/bare_solve.bin build/emu/bare_solve.png -
