@@ -33,7 +33,7 @@
 #endif
 
 #ifndef PICOW_SSH_COMMAND
-#define PICOW_SSH_COMMAND "TERM=xterm-256color FORCE_COLOR=1 COLUMNS=40 LINES=26 script -qfec 'stty rows 26 cols 40; /bin/sh -i' /dev/null"
+#define PICOW_SSH_COMMAND "exec env TERM=xterm-256color FORCE_COLOR=1 COLUMNS=40 LINES=26 script -qfec 'stty rows 26 cols 40; /bin/sh -i' /dev/null"
 #endif
 
 static char g_term_chars[TERM_ROWS][COLS];

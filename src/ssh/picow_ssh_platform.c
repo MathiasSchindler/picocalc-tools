@@ -5,6 +5,7 @@
 #include "pico/stdlib.h"
 #include "picow_tcp.h"
 
+#include <stdio.h>
 #include <string.h>
 
 #define PICOW_SSH_KEY_BACKSPACE 0x08
@@ -36,6 +37,24 @@ void __attribute__((weak)) picow_ssh_write_console(const char *text, size_t leng
     (void)length;
 }
 
+static void platform_log_tcp_debug(const char *prefix) {
+    PicowTcpDebug debug;
+    char line[160];
+    picow_tcp_get_debug(&debug);
+    snprintf(line, sizeof(line),
+             "\n[%s st=%d rx=%u ovf=%u drop=%u retx=%u wto=%u rto=%u rst=%u]\n",
+             prefix,
+             debug.state,
+             (unsigned int)debug.rx_len,
+             (unsigned int)debug.rx_overflow_events,
+             (unsigned int)debug.rx_dropped_bytes,
+             (unsigned int)debug.tx_retransmits,
+             (unsigned int)debug.write_ack_timeouts,
+             (unsigned int)debug.read_timeouts,
+             (unsigned int)debug.resets);
+    picow_ssh_write_console(line, strlen(line));
+}
+
 const char *platform_getenv(const char *name) {
     (void)name;
     return 0;
@@ -46,7 +65,11 @@ int platform_isatty(int fd) {
 }
 
 long platform_read(int fd, void *buffer, size_t count) {
-    if (picow_tcp_is_socket_fd(fd)) return picow_tcp_read(fd, buffer, count);
+    if (picow_tcp_is_socket_fd(fd)) {
+        long ret = picow_tcp_read(fd, buffer, count);
+        if (ret <= 0) platform_log_tcp_debug(ret == 0 ? "tcp closed" : "tcp read fail");
+        return ret;
+    }
     if (fd == 0 && buffer != 0 && count != 0U) {
         unsigned char *out = (unsigned char *)buffer;
         size_t done = 0U;
@@ -62,7 +85,11 @@ long platform_read(int fd, void *buffer, size_t count) {
 }
 
 long platform_write(int fd, const void *buffer, size_t count) {
-    if (picow_tcp_is_socket_fd(fd)) return picow_tcp_write(fd, buffer, count);
+    if (picow_tcp_is_socket_fd(fd)) {
+        long ret = picow_tcp_write(fd, buffer, count);
+        if (ret < 0 || (size_t)ret != count) platform_log_tcp_debug("tcp write fail");
+        return ret;
+    }
     (void)fd;
     picow_ssh_write_console((const char *)buffer, count);
     return (long)count;

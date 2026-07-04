@@ -17,7 +17,7 @@
 #define TCP_FLAG_ACK 0x10u
 #define TCP_SOCKET_FD 3
 #define TCP_MSS 536u
-#define TCP_RX_CAPACITY 8192u
+#define TCP_RX_CAPACITY 32768u
 
 typedef enum {
     TCP_STATE_CLOSED = 0,
@@ -43,6 +43,9 @@ typedef struct {
 } TcpSocket;
 
 static TcpSocket g_tcp;
+static PicowTcpDebug g_tcp_debug;
+
+static void send_ack(void);
 
 static uint16_t get16(const uint8_t *p) {
     return (uint16_t)(((uint16_t)p[0] << 8) | p[1]);
@@ -97,13 +100,14 @@ static int seq_leq(uint32_t a, uint32_t b) {
     return (int32_t)(a - b) <= 0;
 }
 
-static void rx_append(const uint8_t *data, size_t len) {
+static size_t rx_append(const uint8_t *data, size_t len) {
     size_t offset;
     if (len > TCP_RX_CAPACITY - g_tcp.rx_len) len = TCP_RX_CAPACITY - g_tcp.rx_len;
     for (offset = 0; offset < len; ++offset) {
         g_tcp.rx[(g_tcp.rx_start + g_tcp.rx_len + offset) % TCP_RX_CAPACITY] = data[offset];
     }
     g_tcp.rx_len += len;
+    return len;
 }
 
 static long rx_take(void *buffer, size_t count) {
@@ -113,6 +117,7 @@ static long rx_take(void *buffer, size_t count) {
     for (i = 0; i < n; ++i) out[i] = g_tcp.rx[(g_tcp.rx_start + i) % TCP_RX_CAPACITY];
     g_tcp.rx_start = (g_tcp.rx_start + n) % TCP_RX_CAPACITY;
     g_tcp.rx_len -= n;
+    if (n != 0 && (g_tcp.state == TCP_STATE_ESTABLISHED || g_tcp.state == TCP_STATE_CLOSE_WAIT)) send_ack();
     return (long)n;
 }
 
@@ -151,6 +156,7 @@ static int send_segment(uint8_t flags, const uint8_t *payload, size_t payload_le
     }
     if (payload_len != 0) memcpy(tcp + tcp_header_len, payload, payload_len);
     put16(tcp + 16, tcp_checksum(info->ip, g_tcp.remote_ip, tcp, tcp_len));
+    g_tcp_debug.tx_segments += 1u;
     return picow_net_send_ethernet(frame, frame_len);
 }
 
@@ -191,6 +197,7 @@ static void tcp_handle_ipv4(const uint8_t *packet, size_t length, void *user_dat
     payload = tcp + tcp_header_len;
     payload_len = total - ihl - tcp_header_len;
     if (flags & TCP_FLAG_RST) {
+        g_tcp_debug.resets += 1u;
         g_tcp.state = TCP_STATE_CLOSED;
         return;
     }
@@ -206,8 +213,14 @@ static void tcp_handle_ipv4(const uint8_t *packet, size_t length, void *user_dat
     if (g_tcp.state == TCP_STATE_FIN_WAIT_1 && g_tcp.snd_una == g_tcp.snd_nxt) g_tcp.state = TCP_STATE_FIN_WAIT_2;
     if (payload_len != 0) {
         if (seq == g_tcp.rcv_nxt) {
-            rx_append(payload, payload_len);
-            g_tcp.rcv_nxt += (uint32_t)payload_len;
+            size_t accepted = rx_append(payload, payload_len);
+            g_tcp_debug.rx_segments += 1u;
+            g_tcp_debug.rx_bytes += (uint32_t)accepted;
+            if (accepted < payload_len) {
+                g_tcp_debug.rx_overflow_events += 1u;
+                g_tcp_debug.rx_dropped_bytes += (uint32_t)(payload_len - accepted);
+            }
+            g_tcp.rcv_nxt += (uint32_t)accepted;
         }
         send_ack();
     }
@@ -230,6 +243,7 @@ int picow_tcp_connect(const char *host, unsigned int port, int *socket_fd_out) {
     if (socket_fd_out == 0 || port == 0 || port > 65535U) return -1;
     *socket_fd_out = -1;
     memset(&g_tcp, 0, sizeof(g_tcp));
+    memset(&g_tcp_debug, 0, sizeof(g_tcp_debug));
     if (picow_net_parse_ipv4(host, g_tcp.remote_ip) != 0) return -1;
     hop = picow_net_next_hop_for(g_tcp.remote_ip);
     if (picow_net_arp_resolve(hop, g_tcp.remote_mac) != 0) return -1;
@@ -269,6 +283,7 @@ long picow_tcp_read(int fd, void *buffer, size_t count) {
         sleep_ms(2);
     }
     if (g_tcp.rx_len != 0) return rx_take(buffer, count);
+    if (g_tcp.state != TCP_STATE_CLOSED) g_tcp_debug.read_timeouts += 1u;
     return g_tcp.state == TCP_STATE_CLOSED ? 0 : -1;
 }
 
@@ -279,15 +294,29 @@ long picow_tcp_write(int fd, const void *buffer, size_t count) {
     while (sent < count) {
         size_t chunk = count - sent;
         absolute_time_t deadline;
+        absolute_time_t resend_deadline;
         uint32_t end_seq;
         if (chunk > TCP_MSS) chunk = TCP_MSS;
         if (send_segment(TCP_FLAG_ACK | TCP_FLAG_PSH, data + sent, chunk) != 0) return sent == 0 ? -1 : (long)sent;
         end_seq = g_tcp.snd_nxt + (uint32_t)chunk;
         g_tcp.snd_nxt = end_seq;
         deadline = make_timeout_time_ms(2000);
+        resend_deadline = make_timeout_time_ms(250);
         while (seq_leq(g_tcp.snd_una, end_seq - 1u) && g_tcp.state == TCP_STATE_ESTABLISHED && !time_reached(deadline)) {
             picow_net_poll();
+            if (time_reached(resend_deadline) && seq_leq(g_tcp.snd_una, end_seq - 1u)) {
+                uint32_t saved_snd_nxt = g_tcp.snd_nxt;
+                g_tcp.snd_nxt = end_seq - (uint32_t)chunk;
+                (void)send_segment(TCP_FLAG_ACK | TCP_FLAG_PSH, data + sent, chunk);
+                g_tcp.snd_nxt = saved_snd_nxt;
+                g_tcp_debug.tx_retransmits += 1u;
+                resend_deadline = make_timeout_time_ms(250);
+            }
             sleep_ms(2);
+        }
+        if (seq_leq(g_tcp.snd_una, end_seq - 1u)) {
+            g_tcp_debug.write_ack_timeouts += 1u;
+            return sent == 0 ? -1 : (long)sent;
         }
         sent += chunk;
     }
@@ -314,8 +343,14 @@ int picow_tcp_poll_fd(int fd, int timeout_milliseconds) {
     else deadline = make_timeout_time_ms((uint32_t)timeout_milliseconds);
     while (g_tcp.rx_len == 0 && g_tcp.state != TCP_STATE_CLOSED && !time_reached(deadline)) {
         picow_net_poll();
-        if (g_tcp.state == TCP_STATE_ESTABLISHED || g_tcp.state == TCP_STATE_CLOSE_WAIT) return 1;
         sleep_ms(2);
     }
     return (g_tcp.rx_len != 0 || g_tcp.state == TCP_STATE_CLOSE_WAIT || g_tcp.state == TCP_STATE_CLOSED) ? 1 : 0;
+}
+
+void picow_tcp_get_debug(PicowTcpDebug *debug_out) {
+    if (debug_out == 0) return;
+    *debug_out = g_tcp_debug;
+    debug_out->state = (int)g_tcp.state;
+    debug_out->rx_len = g_tcp.rx_len;
 }
