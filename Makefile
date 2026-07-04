@@ -64,6 +64,7 @@ SIM_SOLVE_REPL_OBJS := $(SIM_DIR)/host_main.o $(SIM_DIR)/picocalc_lcd_sim.o $(SI
 SIM_GRAPHICS_OBJS := $(SIM_DIR)/host_main.o $(SIM_DIR)/picocalc_lcd_sim.o $(SIM_DIR)/graphics_demo.o
 BARE_CC ?= arm-none-eabi-gcc
 BARE_OBJCOPY ?= arm-none-eabi-objcopy
+BARE_AR ?= arm-none-eabi-ar
 BARE_SIZE ?= arm-none-eabi-size
 BARE_DIR := $(BUILD_DIR)/bare
 BARE_HELLO_ELF := $(BARE_DIR)/bare_hello.elf
@@ -80,6 +81,7 @@ BARE_CUBE_ELF := $(BARE_DIR)/bare_cube.elf
 BARE_CUBE_BIN := $(BARE_DIR)/bare_cube.bin
 BARE_CUBE_PICOLINK_BIN := $(BARE_DIR)/bare_cube_picolink.bin
 BARE_CUBE_PICOLINK_MAP := $(BARE_DIR)/bare_cube_picolink.map
+BARE_RUNTIME_ARCHIVE := $(BARE_DIR)/libpico_runtime.a
 BARE_BENCHMARK_ELF := $(BARE_DIR)/bare_benchmark.elf
 BARE_BENCHMARK_BIN := $(BARE_DIR)/bare_benchmark.bin
 BARE_DIAGNOSTICS_ELF := $(BARE_DIR)/bare_diagnostics.elf
@@ -102,7 +104,7 @@ BARE_SOLVE_OBJS := $(BARE_DIR)/start.o $(BARE_DIR)/picocalc_lcd_bare.o $(BARE_DI
 BARE_GRAPHICS_OBJS := $(BARE_DIR)/start.o $(BARE_DIR)/picocalc_lcd_bare.o $(BARE_DIR)/graphics_demo.o
 BARE_CUBE_OBJS := $(BARE_DIR)/start.o $(BARE_DIR)/picocalc_lcd_bare.o $(BARE_DIR)/picocalc_kbd_bare.o $(BARE_DIR)/cube.o
 BARE_AEABI_OBJ := $(BARE_DIR)/aeabi_div.o
-BARE_CUBE_PICOLINK_OBJS := $(BARE_CUBE_OBJS) $(BARE_AEABI_OBJ)
+BARE_CUBE_PICOLINK_OBJS := $(BARE_CUBE_OBJS) $(BARE_RUNTIME_ARCHIVE)
 BARE_BENCHMARK_OBJS := $(BARE_DIR)/start.o $(BARE_DIR)/picocalc_lcd_bare.o $(BARE_DIR)/benchmark.o
 BARE_DIAGNOSTICS_OBJS := $(BARE_DIR)/start.o $(BARE_DIR)/picocalc_lcd_bare.o $(BARE_DIR)/picocalc_kbd_bare.o $(BARE_DIR)/diagnostics.o
 BARE_INTERRUPT_OBJS := $(BARE_DIR)/start.o $(BARE_DIR)/picocalc_lcd_bare.o $(BARE_DIR)/interrupt_probe.o
@@ -310,6 +312,9 @@ $(BARE_DIR)/%.o: $(PICOCALC_BARE_SRC_DIR)/%.c | $(BARE_DIR)
 
 $(BARE_DIR)/%.o: $(PICOCALC_BARE_SRC_DIR)/%.S | $(BARE_DIR)
 	$(BARE_CC) $(BARE_CFLAGS) -c $< -o $@
+
+$(BARE_RUNTIME_ARCHIVE): $(BARE_AEABI_OBJ)
+	$(BARE_AR) rcs $@ $<
 
 $(BARE_DIR)/solve.o: src/solve.c | $(BARE_DIR)
 	$(BARE_CC) $(BARE_CFLAGS) -c $< -o $@

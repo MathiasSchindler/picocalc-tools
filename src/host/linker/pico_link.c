@@ -3,7 +3,9 @@
 typedef unsigned long long u64;
 
 #define MAX_OBJECTS 32
+#define MAX_ARCHIVES 8
 #define MAX_FILE_SIZE (512u * 1024u)
+#define MAX_ARCHIVE_SIZE (2u * 1024u * 1024u)
 #define MAX_INPUT_SECTIONS 2048
 #define MAX_GLOBAL_SYMBOLS 4096
 #define MAX_OUTPUT_SIZE (1024u * 1024u)
@@ -118,11 +120,15 @@ typedef struct {
 } GlobalSymbol;
 
 static u8 g_file_storage[MAX_OBJECTS][MAX_FILE_SIZE];
+static u8 g_archive_storage[MAX_ARCHIVE_SIZE];
+static char g_object_path_storage[MAX_OBJECTS][MAX_PATH_LEN];
 static ObjectFile g_objects[MAX_OBJECTS];
+static const char *g_archives[MAX_ARCHIVES];
 static InputSection g_input_sections[MAX_INPUT_SECTIONS];
 static GlobalSymbol g_globals[MAX_GLOBAL_SYMBOLS];
 static u8 g_output[MAX_OUTPUT_SIZE];
 static int g_object_count;
+static int g_archive_count;
 static int g_input_section_count;
 static int g_global_count;
 static u32 g_text_start;
@@ -138,13 +144,19 @@ static int g_discarded_section_count;
 static int g_relocation_count;
 static int g_relocation_abs32_count;
 static int g_relocation_thm_call_count;
+static int g_archive_member_count;
 static int g_gc_sections = 1;
 static int g_print_stats;
 static int g_order_by_reach;
 static const char *g_map_path;
 
 static int special_symbol_value(const char *name, u32 *out_value);
+static int symbol_is_unresolved(const char *name);
 static void add_global_symbol(const char *name, u32 value, u8 bind, ObjectFile *object, u32 symbol_index);
+
+static void copy_bytes(u8 *dst, const u8 *src, usize size) {
+    for (usize index = 0; index < size; ++index) dst[index] = src[index];
+}
 
 static u16 read16(const u8 *data) {
     return (u16)data[0] | ((u16)data[1] << 8);
@@ -189,6 +201,52 @@ static void fail_path(const char *message, const char *path) {
 
 static int name_is(const char *name, const char *want) {
     return str_eq(name, want);
+}
+
+static int fixed_name_is(const char *name, const char *want, usize count) {
+    usize index = 0;
+    while (index < count && want[index] != 0) {
+        if (name[index] != want[index]) return 0;
+        index += 1u;
+    }
+    if (want[index] != 0) return 0;
+    while (index < count) {
+        if (name[index] != ' ') return 0;
+        index += 1u;
+    }
+    return 1;
+}
+
+static u32 parse_archive_decimal(const char *text, usize count) {
+    u32 value = 0;
+    usize index = 0;
+    int any = 0;
+    while (index < count && text[index] == ' ') index += 1u;
+    while (index < count && text[index] >= '0' && text[index] <= '9') {
+        value = value * 10u + (u32)(text[index] - '0');
+        any = 1;
+        index += 1u;
+    }
+    while (index < count && text[index] == ' ') index += 1u;
+    if (!any || index != count) fail_text("bad archive decimal field");
+    return value;
+}
+
+static usize archive_member_name_len(const char *name) {
+    usize count = 16;
+    while (count > 0u && name[count - 1u] == ' ') count -= 1u;
+    if (count > 0u && name[count - 1u] == '/') count -= 1u;
+    return count;
+}
+
+static void make_archive_member_path(const char *archive_path, const char *member_name, char *out_path) {
+    usize out_pos = 0;
+    usize name_len = archive_member_name_len(member_name);
+    for (usize index = 0; archive_path[index] != 0 && out_pos + 1u < MAX_PATH_LEN; ++index) out_path[out_pos++] = archive_path[index];
+    if (out_pos + 1u < MAX_PATH_LEN) out_path[out_pos++] = '(';
+    for (usize index = 0; index < name_len && out_pos + 1u < MAX_PATH_LEN; ++index) out_path[out_pos++] = member_name[index];
+    if (out_pos + 1u < MAX_PATH_LEN) out_path[out_pos++] = ')';
+    out_path[out_pos] = 0;
 }
 
 static u8 elf_bind(const Elf32Sym *symbol) {
@@ -246,11 +304,11 @@ static InputSection *find_input_section(ObjectFile *object, u32 section_index) {
     return 0;
 }
 
-static void parse_object(ObjectFile *object, const char *path, u8 *storage) {
+static void parse_object_data(ObjectFile *object, const char *path, u8 *storage, usize size) {
     u32 section_index;
     object->path = path;
     object->data = storage;
-    object->size = read_whole_file(path, storage, MAX_FILE_SIZE);
+    object->size = size;
     if (object->size < sizeof(Elf32Ehdr)) fail_path("not an ELF object", path);
     object->ehdr = (const Elf32Ehdr *)object->data;
     if (object->ehdr->e_ident[0] != 0x7fu || object->ehdr->e_ident[1] != 'E' || object->ehdr->e_ident[2] != 'L' || object->ehdr->e_ident[3] != 'F') fail_path("bad ELF magic", path);
@@ -275,6 +333,46 @@ static void parse_object(ObjectFile *object, const char *path, u8 *storage) {
         }
     }
     if (object->symbols == 0) fail_path("missing symbol table", path);
+}
+
+static void parse_object(ObjectFile *object, const char *path, u8 *storage) {
+    usize size = read_whole_file(path, storage, MAX_FILE_SIZE);
+    parse_object_data(object, path, storage, size);
+}
+
+static int object_buffer_defines_needed(const u8 *data, usize size) {
+    const Elf32Ehdr *ehdr;
+    const Elf32Shdr *sections;
+    const Elf32Sym *symbols = 0;
+    const char *symbol_names = 0;
+    u32 symbol_count = 0;
+    if (size < sizeof(Elf32Ehdr)) return 0;
+    ehdr = (const Elf32Ehdr *)data;
+    if (ehdr->e_ident[0] != 0x7fu || ehdr->e_ident[1] != 'E' || ehdr->e_ident[2] != 'L' || ehdr->e_ident[3] != 'F') return 0;
+    if (ehdr->e_ident[4] != 1u || ehdr->e_ident[5] != 1u) return 0;
+    if (ehdr->e_type != 1u || ehdr->e_machine != 40u) return 0;
+    if (ehdr->e_shoff + (u32)ehdr->e_shnum * sizeof(Elf32Shdr) > size) return 0;
+    sections = (const Elf32Shdr *)(data + ehdr->e_shoff);
+    for (u32 section_index = 0; section_index < ehdr->e_shnum; ++section_index) {
+        const Elf32Shdr *section = sections + section_index;
+        if (section->sh_offset + section->sh_size > size && section->sh_type != SHT_NOBITS) return 0;
+        if (section->sh_type == SHT_SYMTAB) {
+            if (section->sh_entsize != sizeof(Elf32Sym)) return 0;
+            if (section->sh_link >= ehdr->e_shnum) return 0;
+            symbols = (const Elf32Sym *)(data + section->sh_offset);
+            symbol_names = (const char *)(data + sections[section->sh_link].sh_offset);
+            symbol_count = section->sh_size / sizeof(Elf32Sym);
+        }
+    }
+    if (symbols == 0) return 0;
+    for (u32 symbol_index = 0; symbol_index < symbol_count; ++symbol_index) {
+        const Elf32Sym *symbol = symbols + symbol_index;
+        u8 bind = elf_bind(symbol);
+        if (bind != STB_GLOBAL && bind != STB_WEAK) continue;
+        if (symbol->st_shndx == SHN_UNDEF) continue;
+        if (symbol_is_unresolved(symbol_names + symbol->st_name)) return 1;
+    }
+    return 0;
 }
 
 static SectionKind classify_section(const char *name, const Elf32Shdr *section) {
@@ -339,19 +437,89 @@ static InputSection *symbol_target_section(ObjectFile *object, u32 symbol_index)
     sys_exit(1);
 }
 
+static void collect_object_global_symbol_names(ObjectFile *object) {
+    u32 symbol_index;
+    for (symbol_index = 0; symbol_index < object->symbol_count; ++symbol_index) {
+        const Elf32Sym *symbol = object->symbols + symbol_index;
+        u8 bind = elf_bind(symbol);
+        if (bind != STB_GLOBAL && bind != STB_WEAK) continue;
+        if (symbol->st_shndx == SHN_UNDEF) continue;
+        add_global_symbol(object->symbol_names + symbol->st_name, 0, bind, object, symbol_index);
+    }
+}
+
 static void collect_global_symbol_names(void) {
     int object_index;
     for (object_index = 0; object_index < g_object_count; ++object_index) {
+        collect_object_global_symbol_names(g_objects + object_index);
+    }
+}
+
+static int symbol_is_unresolved(const char *name) {
+    u32 value;
+    if (special_symbol_value(name, &value)) return 0;
+    for (int global_index = 0; global_index < g_global_count; ++global_index) {
+        if (str_eq(name, g_globals[global_index].name)) return 0;
+    }
+    for (int object_index = 0; object_index < g_object_count; ++object_index) {
         ObjectFile *object = g_objects + object_index;
-        u32 symbol_index;
-        for (symbol_index = 0; symbol_index < object->symbol_count; ++symbol_index) {
+        for (u32 symbol_index = 0; symbol_index < object->symbol_count; ++symbol_index) {
             const Elf32Sym *symbol = object->symbols + symbol_index;
-            u8 bind = elf_bind(symbol);
-            if (bind != STB_GLOBAL && bind != STB_WEAK) continue;
-            if (symbol->st_shndx == SHN_UNDEF) continue;
-            add_global_symbol(object->symbol_names + symbol->st_name, 0, bind, object, symbol_index);
+            if (symbol->st_shndx != SHN_UNDEF) continue;
+            if (elf_bind(symbol) != STB_GLOBAL) continue;
+            if (str_eq(name, object->symbol_names + symbol->st_name)) return 1;
         }
     }
+    return 0;
+}
+
+static void include_archive_member(const char *archive_path, const char *member_name, const u8 *data, usize size) {
+    ObjectFile *object;
+    if (g_object_count >= MAX_OBJECTS) fail_text("too many input files");
+    if (size > MAX_FILE_SIZE) fail_path("archive member too large", archive_path);
+    make_archive_member_path(archive_path, member_name, g_object_path_storage[g_object_count]);
+    copy_bytes(g_file_storage[g_object_count], data, size);
+    object = g_objects + g_object_count;
+    parse_object_data(object, g_object_path_storage[g_object_count], g_file_storage[g_object_count], size);
+    collect_input_sections(object);
+    g_object_count += 1;
+    g_archive_member_count += 1;
+    collect_object_global_symbol_names(object);
+}
+
+static int scan_archive_once(const char *path) {
+    usize size = read_whole_file(path, g_archive_storage, MAX_ARCHIVE_SIZE);
+    usize offset = 8u;
+    int included = 0;
+    if (size < 8u || !fixed_name_is((const char *)g_archive_storage, "!<arch>\n", 8u)) fail_path("not an archive", path);
+    while (offset + 60u <= size) {
+        const char *header = (const char *)(g_archive_storage + offset);
+        u32 member_size;
+        const u8 *member_data;
+        if (header[58] != '`' || header[59] != '\n') fail_path("bad archive header", path);
+        member_size = parse_archive_decimal(header + 48, 10u);
+        member_data = g_archive_storage + offset + 60u;
+        if (offset + 60u + member_size > size) fail_path("archive member outside file", path);
+        if (!fixed_name_is(header, "/", 16u) && !fixed_name_is(header, "//", 16u) && header[0] != '/') {
+            if (object_buffer_defines_needed(member_data, member_size)) {
+                include_archive_member(path, header, member_data, member_size);
+                included = 1;
+            }
+        }
+        offset += 60u + member_size;
+        if ((offset & 1u) != 0u) offset += 1u;
+    }
+    return included;
+}
+
+static void resolve_archives(void) {
+    int changed;
+    do {
+        changed = 0;
+        for (int archive_index = 0; archive_index < g_archive_count; ++archive_index) {
+            if (scan_archive_once(g_archives[archive_index])) changed = 1;
+        }
+    } while (changed);
 }
 
 static void mark_reachable_sections(void) {
@@ -790,6 +958,7 @@ static void write_map(const char *path) {
 static void print_stats(void) {
     out("pico_link: sections kept="); out_uint((u32)g_live_section_count);
     out(" discarded="); out_uint((u32)g_discarded_section_count);
+    out(" archive_members="); out_uint((u32)g_archive_member_count);
     out(" relocations="); out_uint((u32)g_relocation_count);
     out(" abs32="); out_uint((u32)g_relocation_abs32_count);
     out(" thm_call="); out_uint((u32)g_relocation_thm_call_count);
@@ -838,13 +1007,19 @@ __attribute__((used)) int linker_main(int argc, char **argv) {
         return 1;
     }
     while (arg_index < argc) {
-        if (g_object_count >= MAX_OBJECTS) fail_text("too many input files");
-        parse_object(g_objects + g_object_count, argv[arg_index], g_file_storage[g_object_count]);
-        collect_input_sections(g_objects + g_object_count);
-        g_object_count += 1;
+        if (str_ends(argv[arg_index], ".a")) {
+            if (g_archive_count >= MAX_ARCHIVES) fail_text("too many archive inputs");
+            g_archives[g_archive_count++] = argv[arg_index];
+        } else {
+            if (g_object_count >= MAX_OBJECTS) fail_text("too many input files");
+            parse_object(g_objects + g_object_count, argv[arg_index], g_file_storage[g_object_count]);
+            collect_input_sections(g_objects + g_object_count);
+            g_object_count += 1;
+        }
         arg_index += 1;
     }
     collect_global_symbol_names();
+    resolve_archives();
     mark_reachable_sections();
     layout_sections();
     collect_global_symbols();

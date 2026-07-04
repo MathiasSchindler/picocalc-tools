@@ -15,31 +15,31 @@ __aeabi_uidivmod:
     pop {r4, pc}
 1:
     cmp r0, r1
-    bhs 2f
+    bhs 6f
     mov r1, r0
     movs r0, #0
     pop {r4, pc}
-2:
+6:
     movs r2, #0
     movs r3, #1
-3:
+7:
     cmp r1, r0
-    bhi 4f
+    bhi 8f
     lsrs r4, r1, #31
     cmp r4, #0
-    bne 4f
+    bne 8f
     lsls r1, r1, #1
     lsls r3, r3, #1
-    b 3b
-4:
+    b 7b
+8:
     cmp r0, r1
-    bcc 5f
+    bcc 9f
     subs r0, r0, r1
     orrs r2, r3
-5:
+9:
     lsrs r1, r1, #1
     lsrs r3, r3, #1
-    bne 4b
+    bne 8b
     mov r1, r0
     mov r0, r2
     pop {r4, pc}
@@ -56,30 +56,30 @@ __aeabi_uidiv:
     pop {r4, pc}
 1:
     cmp r0, r1
-    bhs 2f
+    bhs 6f
     movs r0, #0
     pop {r4, pc}
-2:
+6:
     movs r2, #0
     movs r3, #1
-3:
+7:
     cmp r1, r0
-    bhi 4f
+    bhi 8f
     lsrs r4, r1, #31
     cmp r4, #0
-    bne 4f
+    bne 8f
     lsls r1, r1, #1
     lsls r3, r3, #1
-    b 3b
-4:
+    b 7b
+8:
     cmp r0, r1
-    bcc 5f
+    bcc 9f
     subs r0, r0, r1
     orrs r2, r3
-5:
+9:
     lsrs r1, r1, #1
     lsrs r3, r3, #1
-    bne 4b
+    bne 8b
     mov r0, r2
     pop {r4, pc}
 

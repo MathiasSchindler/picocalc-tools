@@ -7,7 +7,7 @@ picolink - PicoCalc-profile no-libc linker from ARM object files to flat `.bin` 
 ## SYNOPSIS
 
 ```
-pico_link [--stats] [--map=MAP] [--no-gc-sections] [--order=reach] -o OUTPUT.bin INPUT.o ...
+pico_link [--stats] [--map=MAP] [--no-gc-sections] [--order=reach] -o OUTPUT.bin INPUT.o ... [ARCHIVE.a ...]
 
 make bare-cube-picolink
 ```
@@ -47,9 +47,10 @@ The current implementation is a no-libc Linux host program. It uses `_start`, di
 - text map output for section and symbol inspection
 - compact link statistics for output size, BSS size, relocation counts, and kept/discarded sections
 - optional reachability-ordered section layout for call-graph locality experiments
+- selective Unix `ar` archive input for small local runtime archives
 - direct flat binary output
 
-The `bare-cube-picolink` target also links `src/picocalc/bare/aeabi_div.S`, a small local ARM EABI division-helper object, instead of asking `pico_link` to read `libgcc` archives. The unsigned core uses a normalized shift/subtract loop with early exits, and quotient-only calls have their own entry points so plain `/` does not need to compute the remainder path used by `/` plus `%`.
+The `bare-cube-picolink` target also links `src/picocalc/bare/aeabi_div.S` through `build/bare/libpico_runtime.a`, a small local ARM EABI division-helper archive, instead of asking `pico_link` to read all of `libgcc.a`. The unsigned core uses a normalized shift/subtract loop with early exits, and quotient-only calls have their own entry points so plain `/` does not need to compute the remainder path used by `/` plus `%`.
 
 ## MEMORY PROFILE
 
@@ -74,8 +75,9 @@ The output file starts at `0x10032000`; addresses before that are not represente
 - `--order=reach` lay out sections within each output class by reachability order instead of input order
 - `--order=none` force the default compact input-order layout
 - `INPUT.o` read one or more ELF32 ARM relocatable object files in the order given
+- `ARCHIVE.a` scan a Unix `ar` archive and extract members that define currently unresolved global symbols
 
-There are no linker-script, library-search, archive, final-ELF, or debug-metadata options yet.
+There are no linker-script, library-search, final-ELF, or debug-metadata options yet.
 
 ## EXAMPLES
 
@@ -105,7 +107,7 @@ build/linker/pico_link -o build/bare/bare_cube_picolink.bin \
   build/bare/picocalc_lcd_bare.o \
   build/bare/picocalc_kbd_bare.o \
   build/bare/cube.o \
-  build/bare/aeabi_div.o
+  build/bare/libpico_runtime.a
 ```
 
 Write a map file and print link statistics:
@@ -117,7 +119,7 @@ build/linker/pico_link --stats --map=build/bare/bare_cube_picolink.map \
   build/bare/picocalc_lcd_bare.o \
   build/bare/picocalc_kbd_bare.o \
   build/bare/cube.o \
-  build/bare/aeabi_div.o
+  build/bare/libpico_runtime.a
 ```
 
 ## OUTPUT DIFFERENCES
@@ -133,7 +135,8 @@ The current `bare_cube_picolink.bin` is smaller than `bare_cube.bin` because it 
 - only the PicoCalc SD-app memory profile is implemented
 - only ELF32 little-endian ARM relocatable inputs are accepted
 - only `R_ARM_ABS32` and `R_ARM_THM_CALL` relocations are supported
-- no archive reader is implemented, so `.a` libraries such as `libgcc.a` are not searched
+- archive support is intentionally narrow: it reads ordinary Unix `ar` members by simple names and extracts only members satisfying unresolved globals
+- library search paths are not implemented, so archive paths must be passed explicitly
 - no linker script parser is implemented
 - no final ELF, full symbol table dump, or debug metadata is emitted
 - garbage collection is profile-specific and simpler than GNU `--gc-sections`
