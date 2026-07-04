@@ -15,6 +15,7 @@ build/emu/bin_emu INPUT.bin OUTPUT.png [KEYS] --symbols=MAP
 make bin-emu-cube
 make bin-emu-cube-picolink
 make bin-emu-cube-gif
+make bin-emu-aeabi-double-probe
 make picolink-regression
 ```
 
@@ -70,6 +71,8 @@ Vendor images under `vendor/images` are also used as compatibility probes. They 
 - `--flash-state=PATH` load and save persistent emulated flash contents at `PATH`
 - `--symbols=MAP` read a `pico_link` map file and annotate PCs in frame-ready, budget, crash, and LCD-milestone reports
 
+`pico_link` maps include synthetic PicoCalc startup symbols such as `__data_source`, `__bss_start`, and `__StackTop`. `make picolink-regression` checks those map entries before running the emulator hash tests.
+
 ## EXAMPLES
 
 Run the traditional cube image and write a PNG:
@@ -88,6 +91,12 @@ Run the focused `pico_link` regression set, including the custom-linked cube, hy
 
 ```
 make picolink-regression
+```
+
+Run the local ARM EABI double conversion, comparison, and arithmetic helper probe:
+
+```
+make bin-emu-aeabi-double-probe
 ```
 
 Capture the cube demo as an animated GIF:

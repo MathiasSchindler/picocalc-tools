@@ -50,10 +50,11 @@ The current implementation is a no-libc Linux host program. It uses `_start`, di
 - optional reachability-ordered section layout for call-graph locality experiments
 - selective Unix `ar` archive input for small local runtime archives
 - GCC LTO handoff through `-flinker-output=nolto-rel` native relocatable objects
-- GCC relocatable runtime prelink handoff for larger firmware that still needs libgcc helper code
+- GCC relocatable runtime prelink handoff for larger firmware objects before final flattening
+- synthetic PicoCalc profile symbols for startup code: `__data_source`, `__data_start`, `__data_end`, `__bss_start`, `__bss_end`, `__StackTop`, and `__stack`
 - direct flat binary output
 
-The `bare-cube-picolink` target also links `src/picocalc/bare/aeabi_div.S` through `build/bare/libpico_runtime.a`, a small local ARM EABI division-helper archive, instead of asking `pico_link` to read all of `libgcc.a`. The unsigned core uses a normalized shift/subtract loop with early exits, and quotient-only calls have their own entry points so plain `/` does not need to compute the remainder path used by `/` plus `%`.
+The `bare-cube-picolink` and `bare-solve-picolink` targets also link local ARM EABI helper code through `build/bare/libpico_runtime.a`, instead of asking `pico_link` to read all of `libgcc.a`. The archive contains 32-bit division helpers, 64-bit integer multiply/divide/shift helpers, the Thumb-1 byte switch helper used by GCC, and local double conversion, comparison, addition, subtraction, multiplication, and division helpers. The 32-bit unsigned division core uses a normalized shift/subtract loop with early exits, and quotient-only calls have their own entry points so plain `/` does not need to compute the remainder path used by `/` plus `%`.
 
 ## MEMORY PROFILE
 
@@ -66,6 +67,8 @@ The built-in memory profile matches `src/picocalc/bare/memmap_sd_rp2040.ld` for 
 | stack top | `0x20042000` | first vector-table word |
 
 The output file starts at `0x10032000`; addresses before that are not represented in the flat file.
+
+`pico_link` provides the startup symbols that GNU ld normally gets from `memmap_sd_rp2040.ld`. `__data_source` is the flash load address for copied `.data`; `__data_start` and `__data_end` bound the RAM `.data` region; `__bss_start` and `__bss_end` bound the zeroed RAM `.bss` region; `__StackTop` and `__stack` resolve to `0x20042000`. These symbols are also written to map files so emulator reports and regression checks can inspect them.
 
 ## OPTIONS
 
@@ -111,7 +114,7 @@ make bin-emu-solve-lto
 
 The resulting `build/bare-lto/bare_solve_lto.bin` has been validated in the emulator and on a physical PicoCalc.
 
-Build and run the current `pico_link` solve firmware. This path uses GCC only for a relocatable prelink that pulls in the required libgcc helper objects; `pico_link` still performs the final PicoCalc memory layout and flat `.bin` emission:
+Build and run the current `pico_link` solve firmware. This path uses GCC for a relocatable prelink, while `pico_link` still performs the final PicoCalc memory layout and flat `.bin` emission:
 
 ```
 make bare-solve-picolink
@@ -136,6 +139,16 @@ make picolink-regression
 ```
 
 This builds the current custom-linked cube, hybrid LTO cube, and solve images, runs emulator hash checks, uses map-aware PC reporting, and prints image-size comparisons.
+
+The regression also checks each `pico_link` map with `tests/check_picolink_symbols.awk`, ensuring the synthetic startup symbols are present, unique, inside the PicoCalc profile ranges, and consistent with the emitted image size.
+
+Run the local double-helper probe:
+
+```
+make bin-emu-aeabi-double-probe
+```
+
+This verifies local double conversion, comparison, and arithmetic helpers against compile-time bit-pattern expectations, edge cases around signed zero, NaN, infinity, subnormals, integer saturation, arithmetic overflow, division by zero, and rounding around `2^53`.
 
 Call `pico_link` directly:
 
@@ -176,7 +189,7 @@ This keeps `pico_link` dependency-free while still allowing GCC to perform cross
 
 Full GNU LTO also works for the solve firmware when the freestanding memory-helper object is compiled without LTO; `bare_solve_lto.bin` has been validated in both the emulator and on hardware. A full GNU LTO cube image builds and produces a smaller binary, but the current emulator does not complete its first-frame capture within the normal cube budget; the hybrid LTO object linked through `pico_link` does complete, matches the GNU cube framebuffer hash in the emulator, and runs on hardware.
 
-The non-LTO `bare-solve-picolink` target currently uses a GCC `-r` handoff to pull in libgcc's soft-float, 64-bit arithmetic, and Thumb switch helpers before the final `pico_link` pass. That is a pragmatic replacement for GNU's final link step, not a fully local runtime yet. The next runtime-size step is to replace the remaining pulled helper objects with small PicoCalc-profile helpers or reduce solve's PicoCalc output path so it does not need soft-double formatting helpers.
+The non-LTO `bare-solve-picolink` target currently uses a GCC `-r` handoff to merge the firmware objects before the final `pico_link` pass. Integer division, 64-bit integer arithmetic, Thumb switch helpers, and double conversion/comparison/arithmetic helpers are supplied by the local PicoCalc runtime archive. That is a pragmatic replacement for GNU's final link step, not a general-purpose linker yet. The next runtime-size step is to continue trimming helper implementations against PicoCalc workloads and to reduce solve's output path where normal C semantics allow it.
 
 ## LIMITATIONS
 

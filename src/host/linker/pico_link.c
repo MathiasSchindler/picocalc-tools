@@ -156,6 +156,11 @@ static int special_symbol_value(const char *name, u32 *out_value);
 static int symbol_is_unresolved(const char *name);
 static void add_global_symbol(const char *name, u32 value, u8 bind, ObjectFile *object, u32 symbol_index);
 
+typedef struct {
+    const char *name;
+    u32 value;
+} SyntheticSymbol;
+
 static void copy_bytes(u8 *dst, const u8 *src, usize size) {
     for (usize index = 0; index < size; ++index) dst[index] = src[index];
 }
@@ -933,6 +938,29 @@ static void write_map_section(int fd, InputSection *input_section) {
     write_map_line(fd, section_kind_name(input_section->kind), " ", input_section->name);
 }
 
+static void write_map_symbol(int fd, const char *name, u32 value) {
+    write_map_hex(fd, value);
+    (void)sys_write(fd, " ", 1);
+    write_map_line(fd, name, 0, 0);
+}
+
+static void write_map_synthetic_symbols(int fd) {
+    SyntheticSymbol symbols[] = {
+        { "__text_start", g_text_start },
+        { "__text_end", g_text_end },
+        { "__data_source", g_data_source },
+        { "__data_start", g_data_start },
+        { "__data_end", g_data_end },
+        { "__bss_start", g_bss_start },
+        { "__bss_end", g_bss_end },
+        { "__StackTop", STACK_TOP },
+        { "__stack", STACK_TOP },
+    };
+    for (u32 index = 0; index < sizeof(symbols) / sizeof(symbols[0]); ++index) {
+        write_map_symbol(fd, symbols[index].name, symbols[index].value);
+    }
+}
+
 static void write_map(const char *path) {
     long fd = sys_openat(AT_FDCWD, path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     int section_pos;
@@ -959,10 +987,9 @@ static void write_map(const char *path) {
     }
     write_map_line((int)fd, "", 0, 0);
     write_map_line((int)fd, "SYMBOLS", 0, 0);
+    write_map_synthetic_symbols((int)fd);
     for (int global_index = 0; global_index < g_global_count; ++global_index) {
-        write_map_hex((int)fd, g_globals[global_index].value);
-        (void)sys_write((int)fd, " ", 1);
-        write_map_line((int)fd, g_globals[global_index].name, 0, 0);
+        write_map_symbol((int)fd, g_globals[global_index].name, g_globals[global_index].value);
     }
     (void)sys_close((int)fd);
 }
