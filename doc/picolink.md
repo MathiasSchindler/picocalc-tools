@@ -48,6 +48,7 @@ The current implementation is a no-libc Linux host program. It uses `_start`, di
 - compact link statistics for output size, BSS size, relocation counts, and kept/discarded sections
 - optional reachability-ordered section layout for call-graph locality experiments
 - selective Unix `ar` archive input for small local runtime archives
+- GCC LTO handoff through `-flinker-output=nolto-rel` native relocatable objects
 - direct flat binary output
 
 The `bare-cube-picolink` target also links `src/picocalc/bare/aeabi_div.S` through `build/bare/libpico_runtime.a`, a small local ARM EABI division-helper archive, instead of asking `pico_link` to read all of `libgcc.a`. The unsigned core uses a normalized shift/subtract loop with early exits, and quotient-only calls have their own entry points so plain `/` does not need to compute the remainder path used by `/` plus `%`.
@@ -99,6 +100,20 @@ Compare the GNU-linked and `pico_link` cube images by size and first-frame emula
 make cube-link-compare
 ```
 
+Build and run the current GNU LTO solve firmware. The solve target keeps `support.o` non-LTO so the freestanding `memcpy`/`memset` helpers remain ordinary Thumb code:
+
+```
+make bare-solve-lto
+make bin-emu-solve-lto
+```
+
+Build and run a hybrid LTO cube image. GCC first compiles the LTO program into a normal relocatable object with `-flinker-output=nolto-rel`; `pico_link` then maps that object to the final flat `.bin`:
+
+```
+make bare-cube-lto-picolink
+make bin-emu-cube-lto-picolink
+```
+
 Call `pico_link` directly:
 
 ```
@@ -130,6 +145,14 @@ This is intentional. The custom linker is allowed to become more aggressive than
 
 The current `bare_cube_picolink.bin` is smaller than `bare_cube.bin` because it uses local division helpers and a simpler built-in layout instead of the GNU linker plus libgcc layout.
 
+## LTO NOTES
+
+`pico_link` does not load GCC's LTO plugin and does not parse `.gnu.lto*` compiler IR sections directly. The supported LTO path is a handoff: invoke `arm-none-eabi-gcc -r -flto=auto -flinker-output=nolto-rel ...` to let GCC perform LTO and emit an ordinary ARM relocatable object, then pass that object to `pico_link`.
+
+This keeps `pico_link` dependency-free while still allowing GCC to perform cross-translation-unit optimization before the final PicoCalc-profile link-and-flatten step.
+
+Full GNU LTO also works for the solve firmware in the emulator when the freestanding memory-helper object is compiled without LTO. A full GNU LTO cube image builds and produces a smaller binary, but the current emulator does not complete its first-frame capture within the normal cube budget; the hybrid LTO object linked through `pico_link` does complete and matches the GNU cube framebuffer hash in the emulator.
+
 ## LIMITATIONS
 
 - only the PicoCalc SD-app memory profile is implemented
@@ -139,6 +162,7 @@ The current `bare_cube_picolink.bin` is smaller than `bare_cube.bin` because it 
 - library search paths are not implemented, so archive paths must be passed explicitly
 - no linker script parser is implemented
 - no final ELF, full symbol table dump, or debug metadata is emitted
+- raw `.gnu.lto*` objects are not consumed directly; use GCC's `nolto-rel` handoff for LTO input
 - garbage collection is profile-specific and simpler than GNU `--gc-sections`
 - relocation overflow checks are minimal outside Thumb call range validation
 - the host executable currently targets Linux x86-64 no-libc syscalls

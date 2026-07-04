@@ -645,10 +645,10 @@ static void spi_rx_push(u8 byte) {
     if (g_spi.rx_count < SPI_FIFO_SIZE) {
         g_spi.rx[(g_spi.rx_head + g_spi.rx_count) & (SPI_FIFO_SIZE - 1)] = byte;
         g_spi.rx_count += 1;
-        g_spi.last_rx = byte;
     } else {
         g_spi.overrun = 1;
     }
+    g_spi.last_rx = byte;
 }
 
 static void spi_service(int force) {
@@ -2079,6 +2079,10 @@ static int run_bin(const char *in_path, const char *image_path, const char *key_
         out(" r4="); out_hex(cpu.r[4]); out(" r5="); out_hex(cpu.r[5]);
         out(" r6="); out_hex(cpu.r[6]); out(" r7="); out_hex(cpu.r[7]);
         out(" sp="); out_hex(cpu.r[13]); out(" lr="); out_hex(cpu.r[14]);
+        out(" spi_tx="); out_hex((u32)g_spi.tx_count);
+        out(" spi_rx="); out_hex((u32)g_spi.rx_count);
+        out(" spi_busy_until="); out_hex(g_spi.busy_until);
+        out(" cycles="); out_hex(g_cycles);
         report_pc_window(cpu.r[15]);
         out("\n");
     }
