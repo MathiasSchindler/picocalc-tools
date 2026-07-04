@@ -1,10 +1,35 @@
 #include "platform.h"
 
+#include "i2ckbd.h"
 #include "pico/rand.h"
 #include "pico/stdlib.h"
 #include "picow_tcp.h"
 
 #include <string.h>
+
+#define PICOW_SSH_KEY_BACKSPACE 0x08
+#define PICOW_SSH_KEY_ENTER     0x0a
+#define PICOW_SSH_KEY_ESC       0xb1
+#define PICOW_SSH_KEY_DEL       0xd4
+
+static int g_pending_stdin = -1;
+
+static int platform_translate_key(int key) {
+    if (key == PICOW_SSH_KEY_ENTER) return '\n';
+    if (key == PICOW_SSH_KEY_BACKSPACE || key == PICOW_SSH_KEY_DEL) return 0x7f;
+    if (key == PICOW_SSH_KEY_ESC) return 27;
+    if (key >= 0 && key < 256) return key;
+    return -1;
+}
+
+static int platform_poll_stdin(void) {
+    int key;
+    if (g_pending_stdin >= 0) return 1;
+    key = platform_translate_key(read_i2c_kbd());
+    if (key < 0) return 0;
+    g_pending_stdin = key;
+    return 1;
+}
 
 void __attribute__((weak)) picow_ssh_write_console(const char *text, size_t length) {
     (void)text;
@@ -22,6 +47,17 @@ int platform_isatty(int fd) {
 
 long platform_read(int fd, void *buffer, size_t count) {
     if (picow_tcp_is_socket_fd(fd)) return picow_tcp_read(fd, buffer, count);
+    if (fd == 0 && buffer != 0 && count != 0U) {
+        unsigned char *out = (unsigned char *)buffer;
+        size_t done = 0U;
+
+        while (done < count) {
+            if (g_pending_stdin < 0 && !platform_poll_stdin()) break;
+            out[done++] = (unsigned char)g_pending_stdin;
+            g_pending_stdin = -1;
+        }
+        return (long)done;
+    }
     return -1;
 }
 
@@ -48,6 +84,10 @@ int platform_poll_fds(const int *fds, size_t fd_count, size_t *ready_index_out, 
             if (ready_index_out != 0) *ready_index_out = i;
             return 1;
         }
+        if (fds[i] == 0 && platform_poll_stdin()) {
+            if (ready_index_out != 0) *ready_index_out = i;
+            return 1;
+        }
     }
     if (fd_count == 1 && picow_tcp_is_socket_fd(fds[0])) {
         int ret = picow_tcp_poll_fd(fds[0], timeout_milliseconds);
@@ -59,6 +99,10 @@ int platform_poll_fds(const int *fds, size_t fd_count, size_t *ready_index_out, 
         while (timeout_milliseconds < 0 || !time_reached(deadline)) {
             for (i = 0; i < fd_count; ++i) {
                 if (picow_tcp_is_socket_fd(fds[i]) && picow_tcp_poll_fd(fds[i], 0) > 0) {
+                    if (ready_index_out != 0) *ready_index_out = i;
+                    return 1;
+                }
+                if (fds[i] == 0 && platform_poll_stdin()) {
                     if (ready_index_out != 0) *ready_index_out = i;
                     return 1;
                 }

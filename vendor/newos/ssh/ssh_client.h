@@ -19,6 +19,7 @@ typedef struct {
     const char *command;
     const unsigned char *input;
     size_t input_size;
+    int interactive;
     SshClientDataCallback output_callback;
     void *output_user_data;
 } SshClientExecConfig;

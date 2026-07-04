@@ -181,13 +181,13 @@ if(PICO_CYW43_SUPPORTED)
         src/ssh/picow_ssh_platform.c
         src/ssh/picow_ssh_runtime.c
         src/ssh/picow_ssh_tool_util.c
-        src/ssh/picow_ssh_ed25519_stub.c
         vendor/newos/ssh/ssh_client.c
         vendor/newos/ssh/ssh_core.c
         vendor/newos/ssh/ssh_known_hosts.c
         vendor/newos/crypto/chacha20_poly1305.c
         vendor/newos/crypto/crypto_util.c
         vendor/newos/crypto/curve25519.c
+        vendor/newos/crypto/ed25519.c
         vendor/newos/crypto/sha256.c
         vendor/newos/crypto/sha512.c
         vendor/newos/crypto/ssh_kdf.c
@@ -199,8 +199,7 @@ if(PICO_CYW43_SUPPORTED)
         ${CMAKE_CURRENT_LIST_DIR}/vendor/newos/ssh
     )
     target_compile_definitions(picow_ssh_flash PRIVATE
-        PICOW_SSH_INSECURE_SKIP_ED25519_VERIFY=1
-        PICOW_SSH_INSECURE_TRUST_HOST_KEY=1
+        PICOW_SSH_USE_PINNED_HOST_KEY=1
     )
     target_link_libraries(picow_ssh_flash PRIVATE pico_rand)
     set_target_properties(picow_ssh_flash PROPERTIES OUTPUT_NAME picow_ssh_flash)

@@ -649,7 +649,7 @@ $(PICOW_NET_DIAG_UF2): $(BIN2UF2) CMakeLists.txt $(PICOCALC_SDK_SRC_DIR)/picow_n
 	cp $(PICOW_NET_DIAG_FLASH_UF2) $@
 	@ls -lh $(PICOW_NET_DIAG_FLASH_BIN) $(PICOW_NET_DIAG_FLASH_UF2) $@
 
-$(PICOW_SSH_UF2): $(BIN2UF2) CMakeLists.txt src/ssh.c src/picow_net/picow_net.c src/picow_net/picow_net.h src/picow_net/picow_tcp.c src/picow_net/picow_tcp.h src/ssh/picow_ssh_platform.c src/ssh/picow_ssh_runtime.c src/ssh/picow_ssh_tool_util.c vendor/newos/ssh/ssh_client.c vendor/newos/ssh/ssh_core.c vendor/newos/ssh/ssh_known_hosts.c $(PICOW_NET_SECRETS_HEADER) | $(BARE_UF2_DIR)
+$(PICOW_SSH_UF2): $(BIN2UF2) CMakeLists.txt src/ssh.c src/picow_net/picow_net.c src/picow_net/picow_net.h src/picow_net/picow_tcp.c src/picow_net/picow_tcp.h src/ssh/picow_ssh_platform.c src/ssh/picow_ssh_runtime.c src/ssh/picow_ssh_tool_util.c src/ssh/picow_ssh_pinned_host.h vendor/newos/ssh/ssh_client.c vendor/newos/ssh/ssh_client.h vendor/newos/ssh/ssh_core.c vendor/newos/ssh/ssh_known_hosts.c vendor/newos/crypto/ed25519.c $(PICOW_NET_SECRETS_HEADER) | $(BARE_UF2_DIR)
 	PICO_SDK_PATH=$(PICO_SDK_PATH) cmake -S . -B $(PICOW_BUILD_DIR) -DPICO_BOARD=pico_w
 	cmake --build $(PICOW_BUILD_DIR) --target picow_ssh_flash -j2
 	cp $(PICOW_SSH_FLASH_UF2) $@

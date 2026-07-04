@@ -12,6 +12,10 @@
 #include "ssh_known_hosts.h"
 #include "tool_util.h"
 
+#ifdef PICOW_SSH_USE_PINNED_HOST_KEY
+#include "picow_ssh_pinned_host.h"
+#endif
+
 #include <stddef.h>
 
 #define SSH_CLIENT_BANNER_TEXT "SSH-2.0-newos_ssh_0.1"
@@ -1219,11 +1223,25 @@ static int ssh_confirm_host_key(
     unsigned int port,
     const SshStringView *host_key_blob
 ) {
-#ifdef PICOW_SSH_INSECURE_TRUST_HOST_KEY
-    (void)host;
-    (void)port;
-    (void)host_key_blob;
-    rt_write_cstr(2, "ssh: WARNING trusting host key without known_hosts on PicoCalc lab build\n");
+#ifdef PICOW_SSH_USE_PINNED_HOST_KEY
+    static const unsigned char pinned_key[32] = PICOW_SSH_PINNED_HOST_KEY;
+    unsigned char server_key[32];
+
+    if (host == 0 || host_key_blob == 0 || rt_strcmp(host, PICOW_SSH_PINNED_HOST) != 0 || port != PICOW_SSH_PINNED_PORT) {
+        rt_write_cstr(2, "ssh: host is not the pinned PicoCalc target\n");
+        return -1;
+    }
+    if (ssh_parse_ed25519_public_key_blob(host_key_blob, server_key) != 0) {
+        rt_write_cstr(2, "ssh: invalid pinned host key blob\n");
+        return -1;
+    }
+    if (!crypto_constant_time_equal(server_key, pinned_key, sizeof(pinned_key))) {
+        rt_write_cstr(2, "ssh: pinned host key mismatch for ");
+        rt_write_cstr(2, host);
+        rt_write_char(2, '\n');
+        return -1;
+    }
+    rt_write_cstr(2, "ssh: pinned host key matched\n");
     return 0;
 #else
     char fingerprint[SSH_FINGERPRINT_CAPACITY];
@@ -1785,6 +1803,8 @@ static int ssh_start_exec_command(
     int remote_closed = 0;
     int saw_exit_status = 0;
     int exit_status = 255;
+    int fds[2];
+    size_t ready_index = 0U;
 
     if (config == 0 || config->command == 0 || exit_status_out == 0) {
         return -1;
@@ -1883,7 +1903,7 @@ static int ssh_start_exec_command(
         return -1;
     }
 
-    while (input_offset < config->input_size) {
+    while (!config->interactive && input_offset < config->input_size) {
         size_t chunk = config->input_size - input_offset;
 
         if (channel.remote_window == 0U) {
@@ -1909,7 +1929,7 @@ static int ssh_start_exec_command(
         *client_seq_io += 1U;
         input_offset += chunk;
     }
-    if (!channel.eof_sent) {
+    if (!config->interactive && !channel.eof_sent) {
         if (ssh_send_channel_eof(sock, keys->key_c_to_s, *client_seq_io, channel.remote_id) == 0) {
             *client_seq_io += 1U;
         }
@@ -1920,6 +1940,48 @@ static int ssh_start_exec_command(
         unsigned int bytes_to_add = 0U;
         SshStringView data;
         int want_reply = 0;
+
+        if (config->interactive && !channel.eof_sent && channel.remote_window != 0U) {
+            fds[0] = sock;
+            fds[1] = 0;
+            if (platform_poll_fds(fds, 2U, &ready_index, -1) <= 0) {
+                return -1;
+            }
+            if (ready_index == 1U) {
+                unsigned char stdin_buffer[512];
+                size_t limit = sizeof(stdin_buffer);
+                long bytes;
+
+                if (limit > channel.remote_window) limit = channel.remote_window;
+                if (limit > channel.max_packet) limit = channel.max_packet;
+                bytes = platform_read(0, stdin_buffer, limit);
+                if (bytes < 0) return -1;
+                if (bytes == 0) continue;
+                input_offset = 0U;
+                while (input_offset < (size_t)bytes) {
+                    size_t chunk = (size_t)bytes - input_offset;
+                    if (chunk > 512U) chunk = 512U;
+                    if (chunk > channel.max_packet) chunk = channel.max_packet;
+                    if (chunk > channel.remote_window) chunk = channel.remote_window;
+                    if (chunk == 0U) break;
+                    if (ssh_send_channel_data(sock, keys->key_c_to_s, *client_seq_io, &channel,
+                                              stdin_buffer + input_offset, chunk) != 0) {
+                        return -1;
+                    }
+                    *client_seq_io += 1U;
+                    if (config->output_callback != 0) {
+                        (void)config->output_callback(stdin_buffer + input_offset, chunk, 0, config->output_user_data);
+                    }
+                    input_offset += chunk;
+                }
+                continue;
+            }
+        } else {
+            fds[0] = sock;
+            if (platform_poll_fds(fds, 1U, &ready_index, -1) <= 0) {
+                return -1;
+            }
+        }
 
         if (ssh_read_encrypted_packet(sock, keys->key_s_to_c, *server_seq_io, payload, sizeof(payload), &payload_len) != 0 ||
             payload_len == 0U) {

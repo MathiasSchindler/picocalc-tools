@@ -249,7 +249,84 @@ static void fe_neg(struct fe *h, const struct fe *f) {
     fe_sub(h, &zero, f);
 }
 
+#if !defined(__SIZEOF_INT128__) || defined(NEWOS_ED25519_FORCE_WIDE64)
+typedef struct {
+    u64 lo;
+    u64 hi;
+} u128w;
+
+static u128w w_zero(void) {
+    u128w out;
+    out.lo = 0;
+    out.hi = 0;
+    return out;
+}
+
+static void w_add(u128w *acc, u128w value) {
+    u64 old = acc->lo;
+    acc->lo += value.lo;
+    acc->hi += value.hi + (acc->lo < old ? 1u : 0u);
+}
+
+static void w_add_u64(u128w *acc, u64 value) {
+    u64 old = acc->lo;
+    acc->lo += value;
+    if (acc->lo < old) acc->hi += 1u;
+}
+
+static u128w w_mul_u64(u64 a, u64 b) {
+    u64 a0 = (u32)a;
+    u64 a1 = a >> 32;
+    u64 b0 = (u32)b;
+    u64 b1 = b >> 32;
+    u64 p0 = a0 * b0;
+    u64 p1 = a0 * b1;
+    u64 p2 = a1 * b0;
+    u64 p3 = a1 * b1;
+    u128w out;
+    u64 old;
+    u64 carry = 0;
+
+    out.lo = p0;
+    out.hi = p3 + (p1 >> 32) + (p2 >> 32);
+    old = out.lo;
+    out.lo += p1 << 32;
+    if (out.lo < old) carry += 1u;
+    old = out.lo;
+    out.lo += p2 << 32;
+    if (out.lo < old) carry += 1u;
+    out.hi += carry;
+    return out;
+}
+
+static u128w w_mul_small(u128w value, u64 k) {
+    u128w out = w_mul_u64(value.lo, k);
+    out.hi += value.hi * k;
+    return out;
+}
+
+static void w_add_mul(u128w *acc, u64 a, u64 b, u64 k) {
+    u128w product = w_mul_u64(a, b);
+    if (k != 1u) product = w_mul_small(product, k);
+    w_add(acc, product);
+}
+
+static u64 w_shr51(u128w value) {
+    return (value.lo >> 51) | (value.hi << 13);
+}
+
+static void w_mask51(u128w *value) {
+    value->lo &= MASK51;
+    value->hi = 0;
+}
+
+#define W_ADD_MUL(acc, a, b) w_add_mul(&(acc), (a), (b), 1u)
+#define W_ADD_MUL19(acc, a, b) w_add_mul(&(acc), (a), (b), 19u)
+#define W_ADD_MUL38(acc, a, b) w_add_mul(&(acc), (a), (b), 38u)
+#endif
+
 static SSHLAB_CRYPTO_SPEED void fe_mul(struct fe *h, const struct fe *f, const struct fe *g) {
+#if defined(__SIZEOF_INT128__) && !defined(NEWOS_ED25519_FORCE_WIDE64)
     unsigned __int128 f0 = f->v[0];
     unsigned __int128 f1 = f->v[1];
     unsigned __int128 f2 = f->v[2];
@@ -279,9 +356,47 @@ static SSHLAB_CRYPTO_SPEED void fe_mul(struct fe *h, const struct fe *f, const s
     h->v[2] = (u64)h2;
     h->v[3] = (u64)h3;
     h->v[4] = (u64)h4;
+#else
+    u64 f0 = f->v[0];
+    u64 f1 = f->v[1];
+    u64 f2 = f->v[2];
+    u64 f3 = f->v[3];
+    u64 f4 = f->v[4];
+    u64 g0 = g->v[0];
+    u64 g1 = g->v[1];
+    u64 g2 = g->v[2];
+    u64 g3 = g->v[3];
+    u64 g4 = g->v[4];
+    u128w h0 = w_zero();
+    u128w h1 = w_zero();
+    u128w h2 = w_zero();
+    u128w h3 = w_zero();
+    u128w h4 = w_zero();
+    u64 carry;
+
+    W_ADD_MUL(h0, f0, g0); W_ADD_MUL19(h0, f1, g4); W_ADD_MUL19(h0, f2, g3); W_ADD_MUL19(h0, f3, g2); W_ADD_MUL19(h0, f4, g1);
+    W_ADD_MUL(h1, f0, g1); W_ADD_MUL(h1, f1, g0); W_ADD_MUL19(h1, f2, g4); W_ADD_MUL19(h1, f3, g3); W_ADD_MUL19(h1, f4, g2);
+    W_ADD_MUL(h2, f0, g2); W_ADD_MUL(h2, f1, g1); W_ADD_MUL(h2, f2, g0); W_ADD_MUL19(h2, f3, g4); W_ADD_MUL19(h2, f4, g3);
+    W_ADD_MUL(h3, f0, g3); W_ADD_MUL(h3, f1, g2); W_ADD_MUL(h3, f2, g1); W_ADD_MUL(h3, f3, g0); W_ADD_MUL19(h3, f4, g4);
+    W_ADD_MUL(h4, f0, g4); W_ADD_MUL(h4, f1, g3); W_ADD_MUL(h4, f2, g2); W_ADD_MUL(h4, f3, g1); W_ADD_MUL(h4, f4, g0);
+
+    carry = w_shr51(h0); w_mask51(&h0); w_add_u64(&h1, carry);
+    carry = w_shr51(h1); w_mask51(&h1); w_add_u64(&h2, carry);
+    carry = w_shr51(h2); w_mask51(&h2); w_add_u64(&h3, carry);
+    carry = w_shr51(h3); w_mask51(&h3); w_add_u64(&h4, carry);
+    carry = w_shr51(h4); w_mask51(&h4); w_add_u64(&h0, carry * 19u);
+    carry = w_shr51(h0); w_mask51(&h0); w_add_u64(&h1, carry);
+
+    h->v[0] = h0.lo;
+    h->v[1] = h1.lo;
+    h->v[2] = h2.lo;
+    h->v[3] = h3.lo;
+    h->v[4] = h4.lo;
+#endif
 }
 
 static SSHLAB_CRYPTO_SPEED void fe_sq(struct fe *h, const struct fe *f) {
+#if defined(__SIZEOF_INT128__) && !defined(NEWOS_ED25519_FORCE_WIDE64)
     unsigned __int128 f0 = f->v[0];
     unsigned __int128 f1 = f->v[1];
     unsigned __int128 f2 = f->v[2];
@@ -308,9 +423,42 @@ static SSHLAB_CRYPTO_SPEED void fe_sq(struct fe *h, const struct fe *f) {
     h->v[2] = (u64)h2;
     h->v[3] = (u64)h3;
     h->v[4] = (u64)h4;
+#else
+    u64 f0 = f->v[0];
+    u64 f1 = f->v[1];
+    u64 f2 = f->v[2];
+    u64 f3 = f->v[3];
+    u64 f4 = f->v[4];
+    u128w h0 = w_zero();
+    u128w h1 = w_zero();
+    u128w h2 = w_zero();
+    u128w h3 = w_zero();
+    u128w h4 = w_zero();
+    u64 carry;
+
+    W_ADD_MUL(h0, f0, f0); W_ADD_MUL38(h0, f1, f4); W_ADD_MUL38(h0, f2, f3);
+    W_ADD_MUL(h1, f0 + f0, f1); W_ADD_MUL38(h1, f2, f4); W_ADD_MUL19(h1, f3, f3);
+    W_ADD_MUL(h2, f0 + f0, f2); W_ADD_MUL(h2, f1, f1); W_ADD_MUL38(h2, f3, f4);
+    W_ADD_MUL(h3, f0 + f0, f3); W_ADD_MUL(h3, f1 + f1, f2); W_ADD_MUL19(h3, f4, f4);
+    W_ADD_MUL(h4, f0 + f0, f4); W_ADD_MUL(h4, f1 + f1, f3); W_ADD_MUL(h4, f2, f2);
+
+    carry = w_shr51(h0); w_mask51(&h0); w_add_u64(&h1, carry);
+    carry = w_shr51(h1); w_mask51(&h1); w_add_u64(&h2, carry);
+    carry = w_shr51(h2); w_mask51(&h2); w_add_u64(&h3, carry);
+    carry = w_shr51(h3); w_mask51(&h3); w_add_u64(&h4, carry);
+    carry = w_shr51(h4); w_mask51(&h4); w_add_u64(&h0, carry * 19u);
+    carry = w_shr51(h0); w_mask51(&h0); w_add_u64(&h1, carry);
+
+    h->v[0] = h0.lo;
+    h->v[1] = h1.lo;
+    h->v[2] = h2.lo;
+    h->v[3] = h3.lo;
+    h->v[4] = h4.lo;
+#endif
 }
 
 static SSHLAB_CRYPTO_SPEED void fe_mul_small(struct fe *h, const struct fe *f, u64 k) {
+#if defined(__SIZEOF_INT128__) && !defined(NEWOS_ED25519_FORCE_WIDE64)
     unsigned __int128 h0 = (unsigned __int128)f->v[0] * k;
     unsigned __int128 h1 = (unsigned __int128)f->v[1] * k;
     unsigned __int128 h2 = (unsigned __int128)f->v[2] * k;
@@ -330,6 +478,25 @@ static SSHLAB_CRYPTO_SPEED void fe_mul_small(struct fe *h, const struct fe *f, u
     h->v[2] = (u64)h2;
     h->v[3] = (u64)h3;
     h->v[4] = (u64)h4;
+#else
+    u128w h0 = w_mul_u64(f->v[0], k);
+    u128w h1 = w_mul_u64(f->v[1], k);
+    u128w h2 = w_mul_u64(f->v[2], k);
+    u128w h3 = w_mul_u64(f->v[3], k);
+    u128w h4 = w_mul_u64(f->v[4], k);
+    u64 carry;
+    carry = w_shr51(h0); w_mask51(&h0); w_add_u64(&h1, carry);
+    carry = w_shr51(h1); w_mask51(&h1); w_add_u64(&h2, carry);
+    carry = w_shr51(h2); w_mask51(&h2); w_add_u64(&h3, carry);
+    carry = w_shr51(h3); w_mask51(&h3); w_add_u64(&h4, carry);
+    carry = w_shr51(h4); w_mask51(&h4); w_add_u64(&h0, carry * 19u);
+    carry = w_shr51(h0); w_mask51(&h0); w_add_u64(&h1, carry);
+    h->v[0] = h0.lo;
+    h->v[1] = h1.lo;
+    h->v[2] = h2.lo;
+    h->v[3] = h3.lo;
+    h->v[4] = h4.lo;
+#endif
 }
 
 static SSHLAB_CRYPTO_SPEED void fe_pow22523(struct fe *out, const struct fe *z) {
