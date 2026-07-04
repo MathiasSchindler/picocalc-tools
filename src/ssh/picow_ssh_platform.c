@@ -2,6 +2,7 @@
 
 #include "pico/rand.h"
 #include "pico/stdlib.h"
+#include "picow_tcp.h"
 
 #include <string.h>
 
@@ -20,35 +21,51 @@ int platform_isatty(int fd) {
 }
 
 long platform_read(int fd, void *buffer, size_t count) {
-    (void)fd;
-    (void)buffer;
-    (void)count;
+    if (picow_tcp_is_socket_fd(fd)) return picow_tcp_read(fd, buffer, count);
     return -1;
 }
 
 long platform_write(int fd, const void *buffer, size_t count) {
+    if (picow_tcp_is_socket_fd(fd)) return picow_tcp_write(fd, buffer, count);
     (void)fd;
     picow_ssh_write_console((const char *)buffer, count);
     return (long)count;
 }
 
 int platform_close(int fd) {
-    (void)fd;
+    if (picow_tcp_is_socket_fd(fd)) return picow_tcp_close(fd);
     return 0;
 }
 
 int platform_connect_tcp(const char *host, unsigned int port, int *socket_fd_out) {
-    (void)host;
-    (void)port;
-    if (socket_fd_out != 0) *socket_fd_out = -1;
-    return -1;
+    return picow_tcp_connect(host, port, socket_fd_out);
 }
 
 int platform_poll_fds(const int *fds, size_t fd_count, size_t *ready_index_out, int timeout_milliseconds) {
-    (void)fds;
-    (void)fd_count;
-    if (ready_index_out != 0) *ready_index_out = 0;
-    if (timeout_milliseconds > 0) sleep_ms((uint32_t)timeout_milliseconds);
+    size_t i;
+    for (i = 0; i < fd_count; ++i) {
+        if (picow_tcp_is_socket_fd(fds[i]) && picow_tcp_poll_fd(fds[i], 0) > 0) {
+            if (ready_index_out != 0) *ready_index_out = i;
+            return 1;
+        }
+    }
+    if (fd_count == 1 && picow_tcp_is_socket_fd(fds[0])) {
+        int ret = picow_tcp_poll_fd(fds[0], timeout_milliseconds);
+        if (ret > 0 && ready_index_out != 0) *ready_index_out = 0;
+        return ret;
+    }
+    if (timeout_milliseconds != 0) {
+        absolute_time_t deadline = timeout_milliseconds < 0 ? at_the_end_of_time : make_timeout_time_ms((uint32_t)timeout_milliseconds);
+        while (timeout_milliseconds < 0 || !time_reached(deadline)) {
+            for (i = 0; i < fd_count; ++i) {
+                if (picow_tcp_is_socket_fd(fds[i]) && picow_tcp_poll_fd(fds[i], 0) > 0) {
+                    if (ready_index_out != 0) *ready_index_out = i;
+                    return 1;
+                }
+            }
+            sleep_ms(2);
+        }
+    }
     return 0;
 }
 

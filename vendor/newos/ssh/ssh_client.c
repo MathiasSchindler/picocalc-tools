@@ -1219,6 +1219,13 @@ static int ssh_confirm_host_key(
     unsigned int port,
     const SshStringView *host_key_blob
 ) {
+#ifdef PICOW_SSH_INSECURE_TRUST_HOST_KEY
+    (void)host;
+    (void)port;
+    (void)host_key_blob;
+    rt_write_cstr(2, "ssh: WARNING trusting host key without known_hosts on PicoCalc lab build\n");
+    return 0;
+#else
     char fingerprint[SSH_FINGERPRINT_CAPACITY];
     char known_hosts_path[SSH_KNOWN_HOSTS_PATH_CAPACITY];
     SshKnownHostStatus status = SSH_KNOWN_HOST_UNKNOWN;
@@ -1262,6 +1269,7 @@ static int ssh_confirm_host_key(
     }
     return ssh_known_hosts_append(known_hosts_path, host, port, "ssh-ed25519",
                                   host_key_blob->data, host_key_blob->length);
+#endif
 }
 
 static int ssh_authenticate_user(

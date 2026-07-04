@@ -31,5 +31,9 @@ int crypto_ed25519_verify(
     (void)message;
     (void)message_len;
     (void)public_key;
+#ifdef PICOW_SSH_INSECURE_SKIP_ED25519_VERIFY
+    return 0;
+#else
     return -1;
+#endif
 }
