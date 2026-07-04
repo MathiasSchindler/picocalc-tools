@@ -12,8 +12,8 @@
 
 #define ROWS 26
 #define COLS 40
-#define TERM_TOP 8
-#define TERM_BOTTOM 23
+#define TERM_TOP 0
+#define TERM_BOTTOM 25
 #define TERM_ROWS (TERM_BOTTOM - TERM_TOP + 1)
 
 #ifndef PICOW_SSH_HOST
@@ -33,7 +33,7 @@
 #endif
 
 #ifndef PICOW_SSH_COMMAND
-#define PICOW_SSH_COMMAND "TERM=xterm-256color FORCE_COLOR=1 COLUMNS=40 LINES=16 script -qfec 'stty rows 16 cols 40; /bin/sh -i' /dev/null"
+#define PICOW_SSH_COMMAND "TERM=xterm-256color FORCE_COLOR=1 COLUMNS=40 LINES=26 script -qfec 'stty rows 26 cols 40; /bin/sh -i' /dev/null"
 #endif
 
 static char g_term_chars[TERM_ROWS][COLS];
