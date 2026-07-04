@@ -8,6 +8,7 @@ HOST_SOLVE := $(BUILD_DIR)/solve-host
 HOST_OBJS := $(BUILD_DIR)/solve.o $(BUILD_DIR)/support.o $(BUILD_DIR)/platform_linux_x86_64.o
 HOST_SOLVE_SRC_DIR := src/host/solve
 HOST_EMU_SRC_DIR := src/host/emulator
+HOST_LINKER_SRC_DIR := src/host/linker
 HOST_SIM_SRC_DIR := src/host/sim
 HOST_TOOLS_SRC_DIR := src/host/tools
 PICOCALC_BARE_SRC_DIR := src/picocalc/bare
@@ -47,6 +48,10 @@ PICOCALC_SHELL := $(EMU_DIR)/picocalc_shell
 PICOCALC_SHELL_OBJS := $(EMU_DIR)/picocalc_shell.o $(PNG_WRITER_OBJ)
 EMU_CFLAGS ?= -std=c11 -Wall -Wextra -O2 -ffreestanding -fno-builtin -fno-pie -fno-stack-protector -I$(HOST_EMU_SRC_DIR)
 EMU_LDFLAGS ?= -nostdlib -no-pie
+LINKER_DIR := $(BUILD_DIR)/linker
+PICO_LINK := $(LINKER_DIR)/pico_link
+PICO_LINK_OBJ := $(LINKER_DIR)/pico_link.o
+PICO_LINK_CFLAGS ?= -std=c11 -Wall -Wextra -Wno-unused-function -O2 -ffreestanding -fno-builtin -fno-pie -fno-stack-protector -I$(HOST_EMU_SRC_DIR)
 SIM_DIR := $(BUILD_DIR)/sim
 SIM_SOLVE_FIXED := $(SIM_DIR)/sim_solve_fixed
 SIM_SOLVE_REPL := $(SIM_DIR)/sim_solve_repl
@@ -73,6 +78,7 @@ BARE_GRAPHICS_ELF := $(BARE_DIR)/bare_graphics.elf
 BARE_GRAPHICS_BIN := $(BARE_DIR)/bare_graphics.bin
 BARE_CUBE_ELF := $(BARE_DIR)/bare_cube.elf
 BARE_CUBE_BIN := $(BARE_DIR)/bare_cube.bin
+BARE_CUBE_PICOLINK_BIN := $(BARE_DIR)/bare_cube_picolink.bin
 BARE_BENCHMARK_ELF := $(BARE_DIR)/bare_benchmark.elf
 BARE_BENCHMARK_BIN := $(BARE_DIR)/bare_benchmark.bin
 BARE_DIAGNOSTICS_ELF := $(BARE_DIR)/bare_diagnostics.elf
@@ -94,6 +100,8 @@ BARE_SOLVE_FIXED_OBJS := $(BARE_DIR)/start.o $(BARE_DIR)/picocalc_lcd_bare.o $(B
 BARE_SOLVE_OBJS := $(BARE_DIR)/start.o $(BARE_DIR)/picocalc_lcd_bare.o $(BARE_DIR)/picocalc_kbd_bare.o $(BARE_DIR)/solve_repl.o $(BARE_DIR)/solve_repl_bare_input.o $(BARE_DIR)/solve.o $(BARE_DIR)/support.o
 BARE_GRAPHICS_OBJS := $(BARE_DIR)/start.o $(BARE_DIR)/picocalc_lcd_bare.o $(BARE_DIR)/graphics_demo.o
 BARE_CUBE_OBJS := $(BARE_DIR)/start.o $(BARE_DIR)/picocalc_lcd_bare.o $(BARE_DIR)/picocalc_kbd_bare.o $(BARE_DIR)/cube.o
+BARE_AEABI_OBJ := $(BARE_DIR)/aeabi_div.o
+BARE_CUBE_PICOLINK_OBJS := $(BARE_CUBE_OBJS) $(BARE_AEABI_OBJ)
 BARE_BENCHMARK_OBJS := $(BARE_DIR)/start.o $(BARE_DIR)/picocalc_lcd_bare.o $(BARE_DIR)/benchmark.o
 BARE_DIAGNOSTICS_OBJS := $(BARE_DIR)/start.o $(BARE_DIR)/picocalc_lcd_bare.o $(BARE_DIR)/picocalc_kbd_bare.o $(BARE_DIR)/diagnostics.o
 BARE_INTERRUPT_OBJS := $(BARE_DIR)/start.o $(BARE_DIR)/picocalc_lcd_bare.o $(BARE_DIR)/interrupt_probe.o
@@ -101,7 +109,7 @@ BARE_DMA_OBJS := $(BARE_DIR)/start.o $(BARE_DIR)/picocalc_lcd_bare.o $(BARE_DIR)
 BARE_THUMB_OBJS := $(BARE_DIR)/start.o $(BARE_DIR)/picocalc_lcd_bare.o $(BARE_DIR)/thumb_probe.o
 BARE_VENDOR_STARTUP_OBJS := $(BARE_DIR)/start.o $(BARE_DIR)/picocalc_lcd_bare.o $(BARE_DIR)/vendor_startup_probe.o
 
-.PHONY: all arm-probe bare-benchmark bare-cube bare-diagnostics bare-dma-probe bare-graphics bare-hello bare-interrupt-probe bare-keys bare-solve bare-solve-fixed bare-thumb-probe bare-vendor-startup-probe bin-emu-benchmark bin-emu-cube bin-emu-cube-gif bin-emu-diagnostics bin-emu-dma-probe bin-emu-graphics bin-emu-graphics-frames bin-emu-hello bin-emu-hello-trace bin-emu-interrupt-probe bin-emu-live-hello bin-emu-live-solve bin-emu-solve bin-emu-thumb-probe bin-emu-vendor-startup-probe clean emu-deterministic-tests emu-replay-manifest-check emu-vendor-probe font-cascadia gui-graphics gui-hello gui-solve sim-graphics sim-solve-fixed sim-solve-repl smoke
+.PHONY: all arm-probe bare-benchmark bare-cube bare-cube-picolink bare-diagnostics bare-dma-probe bare-graphics bare-hello bare-interrupt-probe bare-keys bare-solve bare-solve-fixed bare-thumb-probe bare-vendor-startup-probe bin-emu-benchmark bin-emu-cube bin-emu-cube-gif bin-emu-cube-picolink bin-emu-diagnostics bin-emu-dma-probe bin-emu-graphics bin-emu-graphics-frames bin-emu-hello bin-emu-hello-trace bin-emu-interrupt-probe bin-emu-live-hello bin-emu-live-solve bin-emu-solve bin-emu-thumb-probe bin-emu-vendor-startup-probe clean emu-deterministic-tests emu-replay-manifest-check emu-vendor-probe font-cascadia gui-graphics gui-hello gui-solve sim-graphics sim-solve-fixed sim-solve-repl smoke
 
 all: $(HOST_SOLVE)
 
@@ -149,6 +157,15 @@ $(EMU_DIR)/emu_mem.o: $(HOST_EMU_SRC_DIR)/emu_mem.h $(HOST_EMU_SRC_DIR)/emu_boot
 $(BIN_EMU): $(BIN_EMU_OBJS)
 	$(CC) $(EMU_LDFLAGS) $^ -lgcc -o $@
 
+$(LINKER_DIR):
+	mkdir -p $(LINKER_DIR)
+
+$(PICO_LINK_OBJ): $(HOST_LINKER_SRC_DIR)/pico_link.c $(HOST_EMU_SRC_DIR)/host_nolibc.h | $(LINKER_DIR)
+	$(CC) $(PICO_LINK_CFLAGS) -c $< -o $@
+
+$(PICO_LINK): $(PICO_LINK_OBJ)
+	$(CC) $(EMU_LDFLAGS) $^ -lgcc -o $@
+
 $(PICOCALC_SHELL): $(PICOCALC_SHELL_OBJS)
 	$(CC) $(EMU_LDFLAGS) $^ -lgcc -o $@
 
@@ -169,6 +186,9 @@ bin-emu-graphics-frames: $(BIN_EMU) $(BARE_GRAPHICS_BIN)
 
 bin-emu-cube: $(BIN_EMU) $(BARE_CUBE_BIN)
 	$(BIN_EMU) $(BARE_CUBE_BIN) $(EMU_DIR)/bare_cube.png
+
+bin-emu-cube-picolink: $(BIN_EMU) $(BARE_CUBE_PICOLINK_BIN)
+	$(BIN_EMU) $(BARE_CUBE_PICOLINK_BIN) $(EMU_DIR)/bare_cube_picolink.png --frames=1 --max-steps=80000000
 
 bin-emu-cube-gif: $(BIN_EMU) $(BARE_CUBE_BIN)
 	$(BIN_EMU) $(BARE_CUBE_BIN) $(EMU_DIR)/bare_cube.gif --frames=$(CUBE_GIF_FRAMES) --gif-fps=$(CUBE_GIF_FPS) --max-steps=$(CUBE_GIF_MAX_STEPS)
@@ -282,6 +302,9 @@ $(BARE_DIR):
 $(BARE_DIR)/%.o: $(PICOCALC_BARE_SRC_DIR)/%.c | $(BARE_DIR)
 	$(BARE_CC) $(BARE_CFLAGS) -c $< -o $@
 
+$(BARE_DIR)/%.o: $(PICOCALC_BARE_SRC_DIR)/%.S | $(BARE_DIR)
+	$(BARE_CC) $(BARE_CFLAGS) -c $< -o $@
+
 $(BARE_DIR)/solve.o: src/solve.c | $(BARE_DIR)
 	$(BARE_CC) $(BARE_CFLAGS) -c $< -o $@
 
@@ -350,7 +373,13 @@ $(BARE_CUBE_BIN): $(BARE_CUBE_ELF)
 	$(BARE_SIZE) $<
 	od -An -tx4 -N8 $@
 
+$(BARE_CUBE_PICOLINK_BIN): $(PICO_LINK) $(BARE_CUBE_PICOLINK_OBJS)
+	$(PICO_LINK) -o $@ $(BARE_CUBE_PICOLINK_OBJS)
+	od -An -tx4 -N8 $@
+
 bare-cube: $(BARE_CUBE_BIN)
+
+bare-cube-picolink: $(BARE_CUBE_PICOLINK_BIN)
 
 $(BARE_BENCHMARK_ELF): $(BARE_BENCHMARK_OBJS) $(PICOCALC_BARE_SRC_DIR)/memmap_sd_rp2040.ld
 	$(BARE_CC) $(BARE_CFLAGS) $(BARE_LDFLAGS) $(BARE_BENCHMARK_OBJS) $(BARE_LDLIBS) -o $@
