@@ -7,3 +7,5 @@ vendor/*
 !vendor/newos/**
 
 test-data/
+
+experimental/
