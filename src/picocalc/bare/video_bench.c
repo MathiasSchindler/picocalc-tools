@@ -489,8 +489,8 @@ static void draw_results(const VideoBenchResult *results, int count) {
         }
     }
     draw_text_line(18, "15fps is the first pass/fail line", 0xffffffu);
-    draw_text_line(20, "Use hardware numbers, emulator is only", 0x80c0ffu);
-    draw_text_line(21, "a rendering/smoke sanity check.", 0x80c0ffu);
+    draw_text_line(20, "Full-frame LCD is the bottleneck", 0x80c0ffu);
+    draw_text_line(21, "Tile deltas are the viable path.", 0x80c0ffu);
     g_sink ^= results[0].total_us;
 }
 

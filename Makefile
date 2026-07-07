@@ -30,6 +30,12 @@ PICOW2_BENCHMARK_FLASH_BIN := $(PICOW2_BUILD_DIR)/picocalc_benchmark_flash.bin
 PICOW2_BENCHMARK_FLASH_UF2 := $(PICOW2_BUILD_DIR)/picocalc_benchmark_flash.uf2
 PICOW2_VIDEO_BENCH_FLASH_BIN := $(PICOW2_BUILD_DIR)/picocalc_video_bench_flash.bin
 PICOW2_VIDEO_BENCH_FLASH_UF2 := $(PICOW2_BUILD_DIR)/picocalc_video_bench_flash.uf2
+PICOW2_VIDEO_PLAYER_FLASH_BIN := $(PICOW2_BUILD_DIR)/picocalc_video_player_flash.bin
+PICOW2_VIDEO_PLAYER_FLASH_UF2 := $(PICOW2_BUILD_DIR)/picocalc_video_player_flash.uf2
+PICOW2_BADAPPLE_PLAYER_FLASH_BIN := $(PICOW2_BUILD_DIR)/picocalc_badapple_player_flash.bin
+PICOW2_BADAPPLE_PLAYER_FLASH_UF2 := $(PICOW2_BUILD_DIR)/picocalc_badapple_player_flash.uf2
+PICOW2_ASTLEY_PLAYER_FLASH_BIN := $(PICOW2_BUILD_DIR)/picocalc_astley_player_flash.bin
+PICOW2_ASTLEY_PLAYER_FLASH_UF2 := $(PICOW2_BUILD_DIR)/picocalc_astley_player_flash.uf2
 PICOW2_WIFI_DIAG_FLASH_BIN := $(PICOW2_BUILD_DIR)/picow_wifi_diag_flash.bin
 PICOW2_WIFI_DIAG_FLASH_UF2 := $(PICOW2_BUILD_DIR)/picow_wifi_diag_flash.uf2
 PICOW2_NET_DIAG_FLASH_BIN := $(PICOW2_BUILD_DIR)/picow_net_diag_flash.bin
@@ -70,6 +76,8 @@ FONT_DIR := $(BUILD_DIR)/font
 FONTGEN := $(FONT_DIR)/gen_picocalc_font
 TOOLS_DIR := $(BUILD_DIR)/tools
 BIN2UF2 := $(TOOLS_DIR)/bin2uf2
+VIDEO_TILE_CODEC := $(TOOLS_DIR)/video_tile_codec
+COLOR_TILE_PROBE := $(TOOLS_DIR)/color_tile_probe
 OPEN_CWY_TRACE_DUMP := $(TOOLS_DIR)/open_cwy_trace_dump
 OPEN_CWY_TRACE_SELFTEST := $(TOOLS_DIR)/open_cwy_trace_selftest
 OPEN_CWY_UDP_COLLECT := $(TOOLS_DIR)/open_cwy_udp_collect
@@ -109,6 +117,27 @@ EMU_HASH_AEABI_DOUBLE := 0xc5fa6567
 EMU_HASH_VENDOR_STARTUP := 0x6867f247
 EMU_VENDOR_DIR := $(BUILD_DIR)/vendor-emu
 VENDOR_IMAGE_BINS := vendor/images/Lua_180a58e.bin vendor/images/MicroPython_fa8b24c.bin vendor/images/MP3player_v0.5.bin vendor/images/PicoCalc_NES_v1.0.bin vendor/images/PicoMite_cbf6d71.bin vendor/images/uLisp_4.8f.bin
+VIDEO_EXP_DIR := experimental/video
+BADAPPLE_SRC := $(VIDEO_EXP_DIR)/badapple.mp4
+ASTLEY_SRC := $(VIDEO_EXP_DIR)/astley.mp4
+BADAPPLE_FPS ?= 25
+BADAPPLE_FPS10 ?= 250
+BADAPPLE_FRAMES ?= 750
+BADAPPLE_FRAME_DIR := $(BUILD_DIR)/video/badapple-320x240-$(BADAPPLE_FPS)fps
+BADAPPLE_LAST_FRAME := $(shell printf 'frame_%05d.pgm' $(BADAPPLE_FRAMES))
+BADAPPLE_PCV := $(BUILD_DIR)/video/badapple_320x240_$(BADAPPLE_FPS)fps.pcv
+BADAPPLE_HEADER := $(GENERATED_DIR)/badapple_video_stream.h
+BADAPPLE_ENCODE_STAMP := $(BUILD_DIR)/video/badapple_320x240_$(BADAPPLE_FPS)fps.stamp
+ASTLEY_FPS ?= 15
+ASTLEY_FPS10 ?= 150
+ASTLEY_SECONDS ?= 10
+ASTLEY_FRAMES ?= $(shell expr $(ASTLEY_FPS) \* $(ASTLEY_SECONDS))
+ASTLEY_MIN_CHANGED_PIXELS ?= 24
+ASTLEY_FRAME_DIR := $(BUILD_DIR)/video/astley-320x240-$(ASTLEY_FPS)fps-rgb
+ASTLEY_LAST_FRAME := $(shell printf 'frame_%05d.ppm' $(ASTLEY_FRAMES))
+ASTLEY_PCVC := $(BUILD_DIR)/video/astley_320x240_$(ASTLEY_FPS)fps_$(ASTLEY_SECONDS)s.pcvc
+ASTLEY_HEADER := $(GENERATED_DIR)/astley_color_stream.h
+ASTLEY_ENCODE_STAMP := $(BUILD_DIR)/video/astley_320x240_$(ASTLEY_FPS)fps_$(ASTLEY_SECONDS)s.stamp
 CUBE_GIF_FRAMES ?= 45
 CUBE_GIF_FPS ?= 15
 CUBE_GIF_MAX_STEPS ?= 80000000
@@ -292,14 +321,17 @@ PICOW2_CUBE_UF2 := $(BARE_UF2_PICO2W_DIR)/cube.uf2
 PICOW2_GRAPHICS_UF2 := $(BARE_UF2_PICO2W_DIR)/graphics.uf2
 PICOW2_BENCHMARK_UF2 := $(BARE_UF2_PICO2W_DIR)/benchmark.uf2
 PICOW2_VIDEO_BENCH_UF2 := $(BARE_UF2_PICO2W_DIR)/video_bench.uf2
+PICOW2_VIDEO_PLAYER_UF2 := $(BARE_UF2_PICO2W_DIR)/video_player.uf2
+PICOW2_BADAPPLE_PLAYER_UF2 := $(BARE_UF2_PICO2W_DIR)/badapple_player.uf2
+PICOW2_ASTLEY_PLAYER_UF2 := $(BARE_UF2_PICO2W_DIR)/astley.uf2
 PICOW2_WIFI_DIAG_UF2 := $(BARE_UF2_PICO2W_DIR)/wifi_diag.uf2
 PICOW2_NET_DIAG_UF2 := $(BARE_UF2_PICO2W_DIR)/net_diag.uf2
 OPEN_CWY_PROBE2_UF2 := $(BARE_UF2_PICO2W_DIR)/open_cwy_probe.uf2
 PICOW2_SSH_UF2 := $(BARE_UF2_PICO2W_DIR)/ssh.uf2
-PICO2W_NORMAL_UF2S := $(PICOW2_HELLO_UF2) $(PICOW2_KEYS_UF2) $(PICOW2_SOLVE_UF2) $(PICOW2_GRAPHICS_UF2) $(PICOW2_CUBE_UF2) $(PICOW2_BENCHMARK_UF2) $(PICOW2_VIDEO_BENCH_UF2)
+PICO2W_NORMAL_UF2S := $(PICOW2_HELLO_UF2) $(PICOW2_KEYS_UF2) $(PICOW2_SOLVE_UF2) $(PICOW2_GRAPHICS_UF2) $(PICOW2_CUBE_UF2) $(PICOW2_BENCHMARK_UF2) $(PICOW2_VIDEO_BENCH_UF2) $(PICOW2_VIDEO_PLAYER_UF2)
 PICO2W_WIRELESS_UF2S := $(PICOW2_WIFI_DIAG_UF2) $(PICOW2_NET_DIAG_UF2) $(OPEN_CWY_PROBE2_UF2) $(PICOW2_SSH_UF2)
 PICO2W_UF2S := $(PICO2W_NORMAL_UF2S) $(PICO2W_WIRELESS_UF2S)
-PICO2W_NORMAL_CMAKE_TARGETS := picocalc_hello_flash picocalc_keys_flash picocalc_solve picocalc_graphics_flash picocalc_cube_flash picocalc_benchmark_flash picocalc_video_bench_flash
+PICO2W_NORMAL_CMAKE_TARGETS := picocalc_hello_flash picocalc_keys_flash picocalc_solve picocalc_graphics_flash picocalc_cube_flash picocalc_benchmark_flash picocalc_video_bench_flash picocalc_video_player_flash
 PICO2W_WIRELESS_CMAKE_TARGETS := picow_wifi_diag_flash picow_net_diag_flash open_cwy_probe_flash picow_ssh_flash
 HELLO_MATRIX_UF2_DIR := $(BARE_UF2_DIR)/hello-matrix
 HELLO_MATRIX_SDK_GNU_UF2 := $(HELLO_MATRIX_UF2_DIR)/hello_sdk_gnu.uf2
@@ -320,9 +352,9 @@ PICOCALC_DELIVERABLE_UF2S := $(BARE_UF2_RP2040_DIR)/hello.uf2 $(BARE_UF2_RP2040_
 PICOCALC_DELIVERABLE_UF2_NAMES := $(notdir $(PICOCALC_DELIVERABLE_UF2S))
 
 .PHONY: uf2 picocalc-uf2 rp2040-uf2 picocalc-rp2040-uf2 rp2040-picow-wifi-diag rp2040-picow-net-diag rp2040-open-cwy-probe rp2040-picow-ssh
-.PHONY: pico2w pico2w-all pico2w-normal pico2w-wireless pico2w-hello pico2w-keys pico2w-solve pico2w-graphics pico2w-cube pico2w-benchmark pico2w-video-bench pico2w-wifi-diag pico2w-net-diag pico2w-open-cwy-probe open-cwy-probe2 pico2w-ssh
+.PHONY: pico2w pico2w-all pico2w-normal pico2w-wireless pico2w-hello pico2w-keys pico2w-solve pico2w-graphics pico2w-cube pico2w-benchmark pico2w-video-bench pico2w-video-player pico2w-badapple-player pico2w-astley-player pico2w-wifi-diag pico2w-net-diag pico2w-open-cwy-probe open-cwy-probe2 pico2w-ssh
 
-.PHONY: all arm-probe bare-aeabi-double-probe bare-aeabi-double-probe-picolink bare-benchmark bare-benchmark-picolink bare-cube bare-cube-lto-picolink bare-cube-picolink bare-diagnostics bare-diagnostics-picolink bare-dma-probe bare-dma-probe-picolink bare-graphics bare-graphics-picolink bare-hello bare-hello-picolink bare-interrupt-probe bare-interrupt-probe-picolink bare-keys bare-keys-picolink bare-picolink-all bare-solve bare-solve-core-1bpp-picolink bare-solve-core-picolink bare-solve-fixed bare-solve-fixed-picolink bare-solve-lto bare-solve-picolink bare-thumb-probe bare-thumb-probe-picolink bare-uf2-all bare-uf2-menu bare-uf2-variants bare-vendor-startup-probe bare-vendor-startup-probe-picolink bare-video-bench bin-emu-aeabi-double-probe bin-emu-aeabi-double-probe-picolink bin-emu-benchmark bin-emu-benchmark-picolink bin-emu-cube bin-emu-cube-gif bin-emu-cube-lto-picolink bin-emu-cube-picolink bin-emu-cyw43-trace-smoke bin-emu-diagnostics bin-emu-diagnostics-picolink bin-emu-dma-probe bin-emu-dma-probe-picolink bin-emu-graphics bin-emu-graphics-frames bin-emu-graphics-picolink bin-emu-hello bin-emu-hello-picolink bin-emu-hello-trace bin-emu-interrupt-probe bin-emu-interrupt-probe-picolink bin-emu-live-hello bin-emu-live-solve bin-emu-picow-wifi-diag bin-emu-sdk-hello bin-emu-solve bin-emu-solve-core-1bpp-picolink bin-emu-solve-core-picolink bin-emu-solve-fixed-picolink bin-emu-solve-lto bin-emu-solve-picolink bin-emu-thumb-probe bin-emu-thumb-probe-picolink bin-emu-vendor-startup-probe bin-emu-vendor-startup-probe-picolink bin-emu-video-bench clean cube-link-compare cyw43-blob-inventory emu-deterministic-tests emu-replay-manifest-check emu-vendor-probe font-cascadia font-cascadia-1bpp gui-graphics gui-hello gui-solve hello-linker-matrix hello-linker-matrix-small open-cwy-probe open-cwy-tools picolink-regression picow-net-diag picow-ssh picow-wifi-diag sdk-hello-picolink-bin sdk-hello-uf2 sim-graphics sim-solve-fixed sim-solve-repl smoke
+.PHONY: all arm-probe badapple-video-analyze badapple-video-encode badapple-video-frames bare-aeabi-double-probe bare-aeabi-double-probe-picolink bare-benchmark bare-benchmark-picolink bare-cube bare-cube-lto-picolink bare-cube-picolink bare-diagnostics bare-diagnostics-picolink bare-dma-probe bare-dma-probe-picolink bare-graphics bare-graphics-picolink bare-hello bare-hello-picolink bare-interrupt-probe bare-interrupt-probe-picolink bare-keys bare-keys-picolink bare-picolink-all bare-solve bare-solve-core-1bpp-picolink bare-solve-core-picolink bare-solve-fixed bare-solve-fixed-picolink bare-solve-lto bare-solve-picolink bare-thumb-probe bare-thumb-probe-picolink bare-uf2-all bare-uf2-menu bare-uf2-variants bare-vendor-startup-probe bare-vendor-startup-probe-picolink bare-video-bench bin-emu-aeabi-double-probe bin-emu-aeabi-double-probe-picolink bin-emu-benchmark bin-emu-benchmark-picolink bin-emu-cube bin-emu-cube-gif bin-emu-cube-lto-picolink bin-emu-cube-picolink bin-emu-cyw43-trace-smoke bin-emu-diagnostics bin-emu-diagnostics-picolink bin-emu-dma-probe bin-emu-dma-probe-picolink bin-emu-graphics bin-emu-graphics-frames bin-emu-graphics-picolink bin-emu-hello bin-emu-hello-picolink bin-emu-hello-trace bin-emu-interrupt-probe bin-emu-interrupt-probe-picolink bin-emu-live-hello bin-emu-live-solve bin-emu-picow-wifi-diag bin-emu-sdk-hello bin-emu-solve bin-emu-solve-core-1bpp-picolink bin-emu-solve-core-picolink bin-emu-solve-fixed-picolink bin-emu-solve-lto bin-emu-solve-picolink bin-emu-thumb-probe bin-emu-thumb-probe-picolink bin-emu-vendor-startup-probe bin-emu-vendor-startup-probe-picolink bin-emu-video-bench clean cube-link-compare cyw43-blob-inventory emu-deterministic-tests emu-replay-manifest-check emu-vendor-probe font-cascadia font-cascadia-1bpp gui-graphics gui-hello gui-solve hello-linker-matrix hello-linker-matrix-small open-cwy-probe open-cwy-tools picolink-regression picow-net-diag picow-ssh picow-wifi-diag sdk-hello-picolink-bin sdk-hello-uf2 sim-graphics sim-solve-fixed sim-solve-repl smoke video-tile-codec video-tile-selftest
 
 all: pico2w-all open-cwy-tools
 
@@ -355,6 +387,55 @@ $(FONTGEN): $(FONTGEN_SRCS) | $(FONT_DIR)
 
 $(BIN2UF2): $(HOST_TOOLS_SRC_DIR)/bin2uf2.c | $(TOOLS_DIR)
 	$(CC) -std=c11 -Wall -Wextra -O2 $< -o $@
+
+$(VIDEO_TILE_CODEC): $(HOST_TOOLS_SRC_DIR)/video_tile_codec.c | $(TOOLS_DIR)
+	$(CC) -std=c11 -Wall -Wextra -O2 $< -o $@
+
+$(COLOR_TILE_PROBE): $(HOST_TOOLS_SRC_DIR)/color_tile_probe.c | $(TOOLS_DIR)
+	$(CC) -std=c11 -Wall -Wextra -O2 $< -lm -o $@
+
+video-tile-codec: $(VIDEO_TILE_CODEC)
+
+video-tile-selftest: $(VIDEO_TILE_CODEC)
+	$(VIDEO_TILE_CODEC) selftest
+
+color-tile-probe: $(COLOR_TILE_PROBE)
+
+$(BADAPPLE_FRAME_DIR)/$(BADAPPLE_LAST_FRAME): $(BADAPPLE_SRC) Makefile
+	@command -v ffmpeg >/dev/null || { echo "ffmpeg is required for Bad Apple frame extraction" >&2; exit 1; }
+	mkdir -p $(BADAPPLE_FRAME_DIR)
+	ffmpeg -y -i $< -vf "fps=$(BADAPPLE_FPS),scale=320:240:force_original_aspect_ratio=increase,crop=320:240,format=gray" -frames:v $(BADAPPLE_FRAMES) $(BADAPPLE_FRAME_DIR)/frame_%05d.pgm
+
+badapple-video-frames: $(BADAPPLE_FRAME_DIR)/$(BADAPPLE_LAST_FRAME)
+
+$(BADAPPLE_PCV) $(BADAPPLE_HEADER): $(BADAPPLE_ENCODE_STAMP)
+
+$(BADAPPLE_ENCODE_STAMP): $(VIDEO_TILE_CODEC) $(BADAPPLE_FRAME_DIR)/$(BADAPPLE_LAST_FRAME) Makefile | $(GENERATED_DIR)
+	$(VIDEO_TILE_CODEC) encode --input-pattern '$(BADAPPLE_FRAME_DIR)/frame_%05d.pgm' --frames $(BADAPPLE_FRAMES) --fps10 $(BADAPPLE_FPS10) --output $(BADAPPLE_PCV) --header $(BADAPPLE_HEADER) --name picocalc_video_stream
+	touch $@
+
+badapple-video-encode: $(BADAPPLE_PCV) $(BADAPPLE_HEADER)
+
+badapple-video-analyze: $(VIDEO_TILE_CODEC) $(BADAPPLE_PCV)
+	$(VIDEO_TILE_CODEC) analyze --input $(BADAPPLE_PCV)
+
+$(ASTLEY_FRAME_DIR)/$(ASTLEY_LAST_FRAME): $(ASTLEY_SRC) Makefile
+	@command -v ffmpeg >/dev/null || { echo "ffmpeg is required for Astley frame extraction" >&2; exit 1; }
+	mkdir -p $(ASTLEY_FRAME_DIR)
+	ffmpeg -y -i $< -vf "fps=$(ASTLEY_FPS),scale=320:240:force_original_aspect_ratio=increase,crop=320:240,format=rgb24" -frames:v $(ASTLEY_FRAMES) $(ASTLEY_FRAME_DIR)/frame_%05d.ppm
+
+astley-color-frames: $(ASTLEY_FRAME_DIR)/$(ASTLEY_LAST_FRAME)
+
+astley-color-analyze: $(COLOR_TILE_PROBE) $(ASTLEY_FRAME_DIR)/$(ASTLEY_LAST_FRAME)
+	$(COLOR_TILE_PROBE) --input-pattern '$(ASTLEY_FRAME_DIR)/frame_%05d.ppm' --frames $(ASTLEY_FRAMES) --fps10 $(ASTLEY_FPS10) --min-changed-pixels $(ASTLEY_MIN_CHANGED_PIXELS)
+
+$(ASTLEY_PCVC) $(ASTLEY_HEADER): $(ASTLEY_ENCODE_STAMP)
+
+$(ASTLEY_ENCODE_STAMP): $(COLOR_TILE_PROBE) $(ASTLEY_FRAME_DIR)/$(ASTLEY_LAST_FRAME) Makefile | $(GENERATED_DIR)
+	$(COLOR_TILE_PROBE) --input-pattern '$(ASTLEY_FRAME_DIR)/frame_%05d.ppm' --frames $(ASTLEY_FRAMES) --fps10 $(ASTLEY_FPS10) --min-changed-pixels $(ASTLEY_MIN_CHANGED_PIXELS) --output $(ASTLEY_PCVC) --header $(ASTLEY_HEADER) --name picocalc_color_video_stream
+	touch $@
+
+astley-color-encode: $(ASTLEY_PCVC) $(ASTLEY_HEADER)
 
 $(OPEN_CWY_TRACE_DUMP): $(OPEN_CWY_SRC_DIR)/open_cwy_trace_dump.c $(OPEN_CWY_SRC_DIR)/open_cwy_trace.h | $(TOOLS_DIR)
 	$(CC) -std=c11 -Wall -Wextra -O2 -I$(OPEN_CWY_SRC_DIR) $< -o $@
@@ -725,6 +806,7 @@ pico2w-normal: font-cascadia | $(BARE_UF2_PICO2W_DIR)
 	cp $(PICOW2_CUBE_FLASH_UF2) $(PICOW2_CUBE_UF2)
 	cp $(PICOW2_BENCHMARK_FLASH_UF2) $(PICOW2_BENCHMARK_UF2)
 	cp $(PICOW2_VIDEO_BENCH_FLASH_UF2) $(PICOW2_VIDEO_BENCH_UF2)
+	cp $(PICOW2_VIDEO_PLAYER_FLASH_UF2) $(PICOW2_VIDEO_PLAYER_UF2)
 	@ls -lh $(PICO2W_NORMAL_UF2S)
 
 pico2w-wireless: $(PICOW_NET_SECRETS_HEADER) | $(BARE_UF2_PICO2W_DIR)
@@ -791,6 +873,30 @@ $(PICOW2_VIDEO_BENCH_UF2): $(BIN2UF2) CMakeLists.txt $(PICOCALC_BARE_SRC_DIR)/vi
 	@ls -lh $(PICOW2_VIDEO_BENCH_FLASH_BIN) $(PICOW2_VIDEO_BENCH_FLASH_UF2) $@
 
 pico2w-video-bench: $(PICOW2_VIDEO_BENCH_UF2)
+
+$(PICOW2_VIDEO_PLAYER_UF2): $(BIN2UF2) CMakeLists.txt $(PICOCALC_BARE_SRC_DIR)/video_player.c $(PICOCALC_BARE_SRC_DIR)/video_stream_sample.h $(PICOCALC_BARE_SRC_DIR)/picocalc_lcd_bare.c $(PICOCALC_BARE_SRC_DIR)/picocalc_lcd_bare.h $(PICOCALC_BARE_SRC_DIR)/rp2040_regs.h $(PICOCALC_SDK_SRC_DIR)/hello_flash_main.c font-cascadia | $(BARE_UF2_PICO2W_DIR)
+	PICO_SDK_PATH=$(PICO_SDK_PATH) cmake -S . -B $(PICOW2_BUILD_DIR) -DPICO_BOARD=pico2_w
+	cmake --build $(PICOW2_BUILD_DIR) --target picocalc_video_player_flash -j2
+	cp $(PICOW2_VIDEO_PLAYER_FLASH_UF2) $@
+	@ls -lh $(PICOW2_VIDEO_PLAYER_FLASH_BIN) $(PICOW2_VIDEO_PLAYER_FLASH_UF2) $@
+
+pico2w-video-player: $(PICOW2_VIDEO_PLAYER_UF2)
+
+$(PICOW2_BADAPPLE_PLAYER_UF2): $(BIN2UF2) $(BADAPPLE_HEADER) CMakeLists.txt $(PICOCALC_BARE_SRC_DIR)/video_player.c $(PICOCALC_BARE_SRC_DIR)/picocalc_lcd_bare.c $(PICOCALC_BARE_SRC_DIR)/picocalc_lcd_bare.h $(PICOCALC_BARE_SRC_DIR)/rp2040_regs.h $(PICOCALC_SDK_SRC_DIR)/hello_flash_main.c font-cascadia | $(BARE_UF2_PICO2W_DIR)
+	PICO_SDK_PATH=$(PICO_SDK_PATH) cmake -S . -B $(PICOW2_BUILD_DIR) -DPICO_BOARD=pico2_w
+	cmake --build $(PICOW2_BUILD_DIR) --target picocalc_badapple_player_flash -j2
+	cp $(PICOW2_BADAPPLE_PLAYER_FLASH_UF2) $@
+	@ls -lh $(PICOW2_BADAPPLE_PLAYER_FLASH_BIN) $(PICOW2_BADAPPLE_PLAYER_FLASH_UF2) $@
+
+pico2w-badapple-player: $(PICOW2_BADAPPLE_PLAYER_UF2)
+
+$(PICOW2_ASTLEY_PLAYER_UF2): $(BIN2UF2) $(ASTLEY_HEADER) CMakeLists.txt $(PICOCALC_BARE_SRC_DIR)/color_video_player.c $(PICOCALC_BARE_SRC_DIR)/picocalc_lcd_bare.c $(PICOCALC_BARE_SRC_DIR)/picocalc_lcd_bare.h $(PICOCALC_BARE_SRC_DIR)/rp2040_regs.h $(PICOCALC_SDK_SRC_DIR)/hello_flash_main.c font-cascadia | $(BARE_UF2_PICO2W_DIR)
+	PICO_SDK_PATH=$(PICO_SDK_PATH) cmake -S . -B $(PICOW2_BUILD_DIR) -DPICO_BOARD=pico2_w
+	cmake --build $(PICOW2_BUILD_DIR) --target picocalc_astley_player_flash -j2
+	cp $(PICOW2_ASTLEY_PLAYER_FLASH_UF2) $@
+	@ls -lh $(PICOW2_ASTLEY_PLAYER_FLASH_BIN) $(PICOW2_ASTLEY_PLAYER_FLASH_UF2) $@
+
+pico2w-astley-player: $(PICOW2_ASTLEY_PLAYER_UF2)
 
 $(PICOW_WIFI_DIAG_UF2): $(BIN2UF2) CMakeLists.txt $(PICOCALC_SDK_SRC_DIR)/picow_wifi_diag.c | $(BARE_UF2_RP2040_DIR)
 	PICO_SDK_PATH=$(PICO_SDK_PATH) cmake -S . -B $(PICOW_BUILD_DIR) -DPICO_BOARD=pico_w

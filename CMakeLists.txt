@@ -179,6 +179,31 @@ add_executable(picocalc_video_bench_flash
 )
 configure_picocalc_bare_sdk_flash_target(picocalc_video_bench_flash)
 
+add_executable(picocalc_video_player_flash
+    src/picocalc/bare/video_player.c
+    src/picocalc/bare/picocalc_lcd_bare.c
+    src/picocalc/sdk/hello_flash_main.c
+)
+configure_picocalc_bare_sdk_flash_target(picocalc_video_player_flash)
+
+add_executable(picocalc_badapple_player_flash EXCLUDE_FROM_ALL
+    src/picocalc/bare/video_player.c
+    src/picocalc/bare/picocalc_lcd_bare.c
+    src/picocalc/sdk/hello_flash_main.c
+)
+configure_picocalc_bare_sdk_flash_target(picocalc_badapple_player_flash)
+target_compile_definitions(picocalc_badapple_player_flash PRIVATE PICOCALC_VIDEO_STREAM_HEADER="badapple_video_stream.h")
+target_include_directories(picocalc_badapple_player_flash PRIVATE ${CMAKE_CURRENT_LIST_DIR}/build/generated)
+
+add_executable(picocalc_astley_player_flash EXCLUDE_FROM_ALL
+    src/picocalc/bare/color_video_player.c
+    src/picocalc/bare/picocalc_lcd_bare.c
+    src/picocalc/sdk/hello_flash_main.c
+)
+configure_picocalc_bare_sdk_flash_target(picocalc_astley_player_flash)
+target_compile_definitions(picocalc_astley_player_flash PRIVATE PICOCALC_COLOR_VIDEO_STREAM_HEADER="astley_color_stream.h")
+target_include_directories(picocalc_astley_player_flash PRIVATE ${CMAKE_CURRENT_LIST_DIR}/build/generated)
+
 add_executable(picocalc_solve_sd ${PICOCALC_SOLVE_SOURCES})
 configure_picocalc_solve_target(picocalc_solve_sd)
 set_target_properties(picocalc_solve_sd PROPERTIES OUTPUT_NAME solve)
