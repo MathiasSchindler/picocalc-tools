@@ -23,18 +23,25 @@ uint16_t pbuf_copy_partial(const struct pbuf *buf, void *dataptr, uint16_t len, 
 #define IP_PROTO_UDP 17u
 #define DHCP_CLIENT_PORT 68u
 #define DHCP_SERVER_PORT 67u
+#define PICOW_NET_MAX_UDP_PAYLOAD 1400u
 
 static PicowNetInfo g_info;
+static PicowNetStats g_stats;
 static uint8_t g_offer_ip[4];
 static uint8_t g_arp_target[4];
 static uint8_t g_arp_mac[6];
+static uint8_t g_udp_cache_ip[4];
+static uint8_t g_udp_cache_mac[6];
 static uint32_t g_xid = 0x50434431u;
 static uint16_t g_ip_id = 1u;
 static volatile int g_dhcp_msg;
 static volatile bool g_sta_link_ready;
 static volatile bool g_arp_ready;
+static int g_udp_cache_valid;
 static PicowNetIpv4Handler g_ipv4_handler;
 static void *g_ipv4_handler_user_data;
+static PicowNetRxTraceHandler g_rx_trace_handler;
+static void *g_rx_trace_handler_user_data;
 
 static void log_line(const PicowNetConfig *config, const char *message) {
     if (config != 0 && config->log != 0) config->log(config->log_user_data, message);
@@ -46,6 +53,31 @@ static uint16_t get16(const uint8_t *p) {
 
 static uint32_t get32(const uint8_t *p) {
     return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | p[3];
+}
+
+static uint32_t fnv1a32(const uint8_t *data, size_t len) {
+    uint32_t hash = 2166136261u;
+    size_t index;
+    for (index = 0; index < len; ++index) hash = (hash ^ data[index]) * 16777619u;
+    return hash;
+}
+
+static uint32_t parse_rxtraffic_counter(const uint8_t *data, size_t len) {
+    static const char marker[] = "OCWYRX";
+    size_t index;
+    for (index = 0; index + sizeof(marker) - 1u <= len; ++index) {
+        size_t pos;
+        uint32_t value = 0;
+        if (memcmp(data + index, marker, sizeof(marker) - 1u) != 0) continue;
+        pos = index + sizeof(marker) - 1u;
+        while (pos < len && data[pos] == ' ') pos += 1;
+        while (pos < len && data[pos] >= '0' && data[pos] <= '9') {
+            value = value * 10u + (uint32_t)(data[pos] - '0');
+            pos += 1;
+        }
+        return value;
+    }
+    return 0;
 }
 
 static void put16(uint8_t *p, uint16_t value) {
@@ -62,6 +94,20 @@ static void put32(uint8_t *p, uint32_t value) {
 
 static int ip_eq(const uint8_t a[4], const uint8_t b[4]) {
     return a[0] == b[0] && a[1] == b[1] && a[2] == b[2] && a[3] == b[3];
+}
+
+static int mac_eq(const uint8_t a[6], const uint8_t b[6]) {
+    return a[0] == b[0] && a[1] == b[1] && a[2] == b[2] && a[3] == b[3] && a[4] == b[4] && a[5] == b[5];
+}
+
+static int mac_broadcast(const uint8_t mac[6]) {
+    return mac[0] == 255u && mac[1] == 255u && mac[2] == 255u && mac[3] == 255u && mac[4] == 255u && mac[5] == 255u;
+}
+
+static uint32_t mac_dst_class(const uint8_t mac[6]) {
+    if (mac_eq(mac, g_info.mac)) return PICOW_NET_RX_DST_ME;
+    if (mac_broadcast(mac)) return PICOW_NET_RX_DST_BROADCAST;
+    return PICOW_NET_RX_DST_OTHER;
 }
 
 static int ip_zero(const uint8_t ip[4]) {
@@ -115,6 +161,7 @@ int picow_net_send_ethernet(const uint8_t *frame, size_t length) {
     if (frame == 0 || length > sizeof(padded)) return -1;
     memcpy(padded, frame, length);
     while (length < 60u) padded[length++] = 0;
+    g_stats.tx_ethernet += 1;
     return cyw43_send_ethernet(&cyw43_state, CYW43_ITF_STA, length, padded, false);
 }
 
@@ -160,6 +207,41 @@ int picow_net_arp_resolve(const uint8_t target_ip[4], uint8_t mac_out[6]) {
 const uint8_t *picow_net_next_hop_for(const uint8_t dst_ip[4]) {
     if (!ip_zero(g_info.gateway) && !same_subnet(g_info.ip, dst_ip)) return g_info.gateway;
     return dst_ip;
+}
+
+int picow_net_send_udp(const uint8_t dst_ip[4], uint16_t dst_port, uint16_t src_port, const void *payload, size_t payload_len) {
+    uint8_t frame[14 + 20 + 8 + PICOW_NET_MAX_UDP_PAYLOAD];
+    uint8_t dst_mac[6];
+    const uint8_t *hop;
+    uint8_t *ip = frame + 14;
+    uint8_t *udp = ip + 20;
+    uint16_t udp_len;
+    if (dst_ip == 0 || payload == 0 || payload_len > PICOW_NET_MAX_UDP_PAYLOAD) {
+        g_stats.tx_udp_errors += 1;
+        return -1;
+    }
+    hop = picow_net_next_hop_for(dst_ip);
+    if (g_udp_cache_valid && ip_eq(g_udp_cache_ip, hop)) {
+        memcpy(dst_mac, g_udp_cache_mac, 6);
+    } else {
+        if (picow_net_arp_resolve(hop, dst_mac) != 0) {
+            g_stats.tx_udp_errors += 1;
+            return -2;
+        }
+        ip_copy(g_udp_cache_ip, hop);
+        memcpy(g_udp_cache_mac, dst_mac, 6);
+        g_udp_cache_valid = 1;
+    }
+    fill_eth(frame, dst_mac, ETH_TYPE_IP);
+    fill_ip(ip, (uint16_t)(20u + 8u + payload_len), IP_PROTO_UDP, dst_ip);
+    udp_len = (uint16_t)(8u + payload_len);
+    put16(udp, src_port);
+    put16(udp + 2, dst_port);
+    put16(udp + 4, udp_len);
+    put16(udp + 6, 0);
+    memcpy(udp + 8, payload, payload_len);
+    g_stats.tx_udp += 1;
+    return picow_net_send_ethernet(frame, 14u + 20u + udp_len);
 }
 
 static void dhcp_send(uint8_t msg_type) {
@@ -296,18 +378,73 @@ static void parse_ipv4_frame(const uint8_t *frame, size_t len) {
     if (ihl < 20 || len < 14 + ihl) return;
     total = get16(ip + 2);
     if (total < ihl || 14u + total > len) return;
+    g_stats.ipv4_frames += 1;
+    g_stats.last_ip_src = get32(ip + 12);
+    g_stats.last_ip_dst = get32(ip + 16);
     proto = ip[9];
+    g_stats.last_ip_proto = proto;
     if (proto == IP_PROTO_UDP && total >= ihl + 8u) {
         const uint8_t *udp = ip + ihl;
         const uint8_t *payload = udp + 8;
         uint16_t src = get16(udp);
         uint16_t dst = get16(udp + 2);
         uint16_t udp_len = get16(udp + 4);
+        g_stats.udp_frames += 1;
+        g_stats.last_udp_src = src;
+        g_stats.last_udp_dst = dst;
+        g_stats.last_udp_len = udp_len;
         if (udp_len >= 8 && ihl + udp_len <= total && src == DHCP_SERVER_PORT && dst == DHCP_CLIENT_PORT) {
+            g_stats.dhcp_frames += 1;
             parse_dhcp(payload, udp_len - 8u);
         }
     }
-    if (g_ipv4_handler != 0) g_ipv4_handler(ip, total, g_ipv4_handler_user_data);
+    if (g_ipv4_handler != 0) {
+        g_stats.ipv4_handler_calls += 1;
+        g_ipv4_handler(ip, total, g_ipv4_handler_user_data);
+    }
+}
+
+static void trace_rx_frame(const uint8_t *frame, size_t len, uint16_t type, uint32_t dst_class) {
+    PicowNetRxTrace trace;
+    const uint8_t *ip;
+    size_t ihl;
+    uint16_t total;
+    if (g_rx_trace_handler == 0) return;
+    memset(&trace, 0, sizeof(trace));
+    trace.length = (uint32_t)len;
+    trace.ethernet_type = type;
+    trace.dst_class = dst_class;
+    trace.frame_hash = fnv1a32(frame, len);
+    if (type == ETH_TYPE_IP && len >= 34u) {
+        ip = frame + 14;
+        if ((ip[0] >> 4) == 4) {
+            ihl = (size_t)(ip[0] & 0x0fu) * 4u;
+            if (ihl >= 20u && len >= 14u + ihl) {
+                total = get16(ip + 2);
+                if (total >= ihl && 14u + total <= len) {
+                    trace.ip_src = get32(ip + 12);
+                    trace.ip_dst = get32(ip + 16);
+                    trace.ip_proto = ip[9];
+                    if (trace.ip_proto == IP_PROTO_UDP && total >= ihl + 8u) {
+                        const uint8_t *udp = ip + ihl;
+                        uint16_t udp_len;
+                        trace.udp_src = get16(udp);
+                        trace.udp_dst = get16(udp + 2);
+                        udp_len = get16(udp + 4);
+                        trace.udp_len = udp_len;
+                        if (udp_len >= 8u && ihl + udp_len <= total) {
+                            const uint8_t *udp_payload = udp + 8;
+                            size_t udp_payload_len = (size_t)udp_len - 8u;
+                            trace.udp_payload_len = (uint32_t)udp_payload_len;
+                            trace.udp_payload_hash = fnv1a32(udp_payload, udp_payload_len);
+                            trace.rxtraffic_counter = parse_rxtraffic_counter(udp_payload, udp_payload_len);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    g_rx_trace_handler(&trace, g_rx_trace_handler_user_data);
 }
 
 void cyw43_cb_tcpip_init(cyw43_t *self, int itf) {
@@ -332,10 +469,22 @@ void cyw43_cb_tcpip_set_link_down(cyw43_t *self, int itf) {
 
 void cyw43_cb_process_ethernet(void *cb_data, int itf, size_t len, const uint8_t *buf) {
     uint16_t type;
+    uint32_t dst_class;
     (void)cb_data;
     if (itf != CYW43_ITF_STA || len < 14) return;
+    g_stats.ethernet_frames += 1;
     type = get16(buf + 12);
-    if (type == ETH_TYPE_ARP) parse_arp(buf, len);
+    dst_class = mac_dst_class(buf);
+    g_stats.last_ethernet_len = (uint32_t)len;
+    g_stats.last_ethernet_type = type;
+    if (dst_class == PICOW_NET_RX_DST_ME) g_stats.ethernet_to_me += 1;
+    else if (dst_class == PICOW_NET_RX_DST_BROADCAST) g_stats.ethernet_broadcast += 1;
+    else g_stats.ethernet_other += 1;
+    trace_rx_frame(buf, len, type, dst_class);
+    if (type == ETH_TYPE_ARP) {
+        g_stats.arp_frames += 1;
+        parse_arp(buf, len);
+    }
     else if (type == ETH_TYPE_IP) parse_ipv4_frame(buf, len);
 }
 
@@ -352,7 +501,7 @@ static int wait_for_join(void) {
     return -1;
 }
 
-int picow_net_init_join_dhcp(const PicowNetConfig *config, PicowNetInfo *info_out) {
+int picow_net_join_dhcp(const PicowNetConfig *config, PicowNetInfo *info_out) {
     const char *ssid;
     const char *password;
     int err;
@@ -360,9 +509,8 @@ int picow_net_init_join_dhcp(const PicowNetConfig *config, PicowNetInfo *info_ou
     ssid = config->ssid;
     password = config->password == 0 ? "" : config->password;
     memset(&g_info, 0, sizeof(g_info));
-    log_line(config, "cyw43 init...");
-    err = cyw43_arch_init();
-    if (err != 0) return -1;
+    memset(&g_stats, 0, sizeof(g_stats));
+    g_udp_cache_valid = 0;
     cyw43_arch_enable_sta_mode();
     (void)cyw43_wifi_get_mac(&cyw43_state, CYW43_ITF_STA, g_info.mac);
     (void)cyw43_wifi_pm(&cyw43_state, CYW43_NONE_PM);
@@ -379,6 +527,14 @@ int picow_net_init_join_dhcp(const PicowNetConfig *config, PicowNetInfo *info_ou
     return 0;
 }
 
+int picow_net_init_join_dhcp(const PicowNetConfig *config, PicowNetInfo *info_out) {
+    int err;
+    log_line(config, "cyw43 init...");
+    err = cyw43_arch_init();
+    if (err != 0) return -1;
+    return picow_net_join_dhcp(config, info_out);
+}
+
 void picow_net_poll(void) {
     cyw43_arch_poll();
 }
@@ -387,9 +543,18 @@ const PicowNetInfo *picow_net_info(void) {
     return &g_info;
 }
 
+const PicowNetStats *picow_net_stats(void) {
+    return &g_stats;
+}
+
 void picow_net_set_ipv4_handler(PicowNetIpv4Handler handler, void *user_data) {
     g_ipv4_handler = handler;
     g_ipv4_handler_user_data = user_data;
+}
+
+void picow_net_set_rx_trace_handler(PicowNetRxTraceHandler handler, void *user_data) {
+    g_rx_trace_handler = handler;
+    g_rx_trace_handler_user_data = user_data;
 }
 
 int picow_net_parse_ipv4(const char *text, uint8_t ip_out[4]) {

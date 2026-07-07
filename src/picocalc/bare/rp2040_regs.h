@@ -1,6 +1,25 @@
 #ifndef PICOCALC_BARE_RP2040_REGS_H
 #define PICOCALC_BARE_RP2040_REGS_H
 
+#ifdef PICOCALC_SDK_FLASH
+
+#include <stddef.h>
+#include <stdint.h>
+
+#include "pico/time.h"
+
+static inline void reg_wait_cycles(unsigned int count) {
+    while (count-- != 0u) {
+        __asm__ volatile ("nop");
+    }
+}
+
+static inline uint32_t reg_time_us(void) {
+    return time_us_32();
+}
+
+#else
+
 typedef unsigned char uint8_t;
 typedef unsigned short uint16_t;
 typedef unsigned int uint32_t;
@@ -102,6 +121,10 @@ static inline void reg_wait_cycles(unsigned int count) {
     }
 }
 
+static inline uint32_t reg_time_us(void) {
+    return REG32(0x40054028u);
+}
+
 static inline void reset_unreset(uint32_t bits) {
     RESETS_RESET |= bits;
     reg_wait_cycles(16u);
@@ -134,5 +157,7 @@ static inline void gpio_put(int pin, int value) {
     if (value) SIO_GPIO_OUT_SET = 1u << pin;
     else SIO_GPIO_OUT_CLR = 1u << pin;
 }
+
+#endif
 
 #endif

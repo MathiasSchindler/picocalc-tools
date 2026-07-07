@@ -1,10 +1,10 @@
 # PicoCalc Freestanding Firmware and Emulator
 
-This project is an experiment in building freestanding, dependency-free, no-libc software for the PicoCalc device. The current hardware target is the RP2040-based PicoCalc, but the code is intended to stay narrow and explicit enough that future PicoCalc variants, such as RP2350-based boards, can be approached without changing the overall direction.
+This project is an experiment in building freestanding, dependency-free, no-libc software for the PicoCalc device. The current default hardware target is a Raspberry Pi Pico 2 W in the PicoCalc, built through the Pico SDK `pico2_w` board profile for RP2350. Older Pico W/RP2040 outputs are now legacy-only and should not be treated as drop-in Pico 2 W firmware.
 
-The same SDK-free firmware should remain a reasonable fit for a Raspberry Pi Pico W installed in the PicoCalc because the application CPU is still the RP2040 and the PicoCalc LCD/keyboard path is unchanged. The Pico W wireless device is different in kind from the rest of this project: it uses the on-board Infineon CYW43439 Wi-Fi/Bluetooth combo chip, which the Pico SDK normally drives through the `cyw43` stack plus lwIP/BT stack integration and a proprietary firmware blob loaded for the wireless chip. Wi-Fi/Bluetooth support is therefore an optional Pico W profile: pragmatic builds may use the blob and SDK stack, while the dependency-free no-libc firmware contract remains separate and the emulator focuses first on CYW43 firmware-load and bus-trace observability.
+The direct SDK-free firmware path remains useful as the original RP2040/PicoCalc research track, emulator target, and comparison point, but it is not the default board profile anymore. The active hardware builds use the Pico 2 W SDK profile because the wireless device uses the on-board Infineon CYW43439 Wi-Fi/Bluetooth combo chip, which the Pico SDK normally drives through the `cyw43` stack plus lwIP/BT stack integration and a proprietary firmware blob loaded for the wireless chip. The dependency-free no-libc firmware contract remains separate, while the emulator focuses first on CYW43 firmware-load and bus-trace observability.
 
-The primary C firmware path deliberately does not use the Pico SDK. Firmware is built as raw PicoCalc SD-bootloader `.bin` images linked at `0x10032000`, with local startup code, direct register access, small support shims, and device-specific LCD/keyboard drivers. The older Pico SDK route remains documented only as historical context for the original porting work; the active SDK-free path is the one exercised by the bare firmware and emulator targets below.
+The original SDK-free C firmware path deliberately does not use the Pico SDK. It builds raw PicoCalc SD-bootloader `.bin` images linked at `0x10032000`, with local startup code, direct register access, small support shims, and device-specific LCD/keyboard drivers. It remains the path exercised by the bare firmware and emulator targets below, while the top-level `make` target now builds the Pico 2 W/RP2350 SDK-profile UF2 set.
 
 `solve` is the first real use case. The repository contains a local fork of the NewOS solver, trimmed support code for the solver, SDK-free PicoCalc I/O, and a growing RP2040/PicoCalc emulator so development can iterate quickly before copying binaries to the actual device.
 
@@ -18,7 +18,7 @@ The repository currently contains:
 - `src/host/sim/`, containing the older source-level Linux simulator for firmware entry points.
 - `src/host/solve/`, containing the tiny syscall-based host runner for smoke tests.
 - `src/host/tools/`, containing host-only build tools such as the bitmap font generator.
-- `src/picocalc/bare/`, containing SDK-free RP2040 startup, PicoCalc LCD/keyboard code, and focused emulator probe firmware.
+- `src/picocalc/bare/`, containing SDK-free RP2040 startup, PicoCalc LCD/keyboard code, SDK-compatible Pico 2 W helper paths for selected tools, and focused emulator probe firmware.
 - `src/picocalc/sdk/`, retained from the earlier Pico SDK port path for comparison and historical continuity.
 - `vendor/docs/`, `vendor/images/`, `vendor/PicoCalc/`, and `vendor/microsoft/`, containing local reference material and test inputs that are ignored by Git.
 - `vendor/newos/`, the vendored NewOS font-rendering support that remains trackable because it is wired into the generated bitmap font path.
@@ -59,13 +59,31 @@ make bin-emu-cyw43-trace-smoke
 
 This is Tier B/Tier C scaffolding: useful for blob-backed Pico W bring-up and protocol capture, not a complete CYW43439 radio emulator.
 
-The first PicoCalc/Pico W hardware diagnostic is `picow_wifi_diag`. It builds a flash-start UF2 using the Pico SDK `cyw43` stack and the PicoCalc LCD/keyboard libraries:
+The first PicoCalc/Pico 2 W hardware diagnostic is `picow_wifi_diag`. The generic Make target now builds the RP2350 `pico2_w` flash-start UF2 using the Pico SDK `cyw43` stack and the PicoCalc LCD/keyboard libraries:
 
 ```sh
 make picow-wifi-diag
 ```
 
-The hardware test binary is `build/picow/picow_wifi_diag_flash.bin`; the Make target copies the normal flash-start SDK UF2 to `build/uf2/wifi_diag.uf2`. The diagnostic intentionally disables USB/UART stdio and avoids lwIP, so it brings up only the CYW43 Wi-Fi scan/join path needed for PicoCalc display testing. A blank Pico W still needs a PicoCalc bootloader or full base firmware first. On the PicoCalc, the app scans for nearby Wi-Fi networks, marks open APs, and only attempts `CYW43_AUTH_OPEN` joins. Controls are `r` to rescan, Enter to try the selected open AP, `j`/`k` or arrow keys to move selection, and `q`/Esc to quit/deinit.
+That writes `build/uf2/wifi_diag.uf2`. The related Pico 2 W SDK targets are `make pico2w-hello`, `make pico2w-keys`, `make pico2w-solve`, `make pico2w-graphics`, `make pico2w-cube`, `make pico2w-benchmark`, `make pico2w-video-bench`, `make pico2w-net-diag`, `make pico2w-open-cwy-probe`, and `make pico2w-ssh`; their UF2 files are also copied directly under `build/uf2/`. To rebuild only the Wi-Fi/Open CWY/SSH set in one batched CMake pass, run:
+
+```sh
+make pico2w-wireless
+```
+
+Plain `make` builds the complete Pico 2 W set. The explicit equivalent is:
+
+```sh
+make pico2w-all
+```
+
+The old Pico W/RP2040 wireless targets remain available only through explicit `rp2040-*` names, such as:
+
+```sh
+make rp2040-picow-wifi-diag
+```
+
+The hardware test binary is `build/picow2/picow_wifi_diag_flash.bin`; the Make target copies the normal flash-start SDK UF2 to `build/uf2/wifi_diag.uf2`. The diagnostic intentionally disables USB/UART stdio and avoids lwIP, so it brings up only the CYW43 Wi-Fi scan/join path needed for PicoCalc display testing. On the PicoCalc, the app scans for nearby Wi-Fi networks, marks open APs, and only attempts `CYW43_AUTH_OPEN` joins. Controls are `r` to rescan, Enter to try the selected open AP, `j`/`k` or arrow keys to move selection, and `q`/Esc to quit/deinit.
 
 You can run the same image through the emulator CYW43 trace harness with:
 
@@ -104,7 +122,7 @@ The first bare-metal proof target builds without the Pico SDK or libc:
 make
 ```
 
-The default build writes the current PicoCalc UF2 deliverables directly under `build/uf2/`: `hello.uf2`, `keys.uf2`, `solve.uf2`, `graphics.uf2`, `cube.uf2`, `benchmark.uf2`, `diagnostics.uf2`, and `wifi_diag.uf2`. The first seven are compact SDK-free `pico_link` images linked at `0x10000100` and packaged as `boot2 + app`; `wifi_diag.uf2` is the explicit Pico W exception and includes the Pico SDK/CYW43 stack needed to talk to the Infineon Wi-Fi chip. The default target also tidies `build/uf2` so it contains only those UF2 files.
+The default build now writes the complete Pico 2 W/RP2350 UF2 deliverables directly under `build/uf2/`: `hello.uf2`, `keys.uf2`, `solve.uf2`, `graphics.uf2`, `cube.uf2`, `benchmark.uf2`, `video_bench.uf2`, `wifi_diag.uf2`, `net_diag.uf2`, `open_cwy_probe.uf2`, and `ssh.uf2`. It keeps the build batched as two Pico SDK CMake configure/build steps: one for normal apps and one for the Wi-Fi/Open CWY/SSH apps. The old RP2040 default bundle is no longer built by plain `make`; build it explicitly with `make rp2040-uf2` if needed for comparison, which writes legacy artifacts under `build/uf2/rp2040/`.
 
 The simplest raw binary proof target is still available separately:
 

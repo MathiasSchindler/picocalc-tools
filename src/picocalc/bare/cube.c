@@ -15,8 +15,6 @@
 #define FACE_COUNT 6
 #define EDGE_COUNT 12
 
-#define TIMERAWL REG32(0x40054028u)
-
 typedef struct {
     int x;
     int y;
@@ -362,7 +360,7 @@ void bare_main(void) {
     picocalc_lcd_clear(0x000000u);
     picocalc_lcd_fill_rect(FB_X - 2, FB_Y - 2, FB_X + FB_W + 1, FB_Y + FB_H + 1, 0x103040u);
     picocalc_lcd_puts_scale(9, 286, "ARROWS mode/speed  WASD also", 0x808080u, 0x000000u, 1);
-    last_us = TIMERAWL;
+    last_us = reg_time_us();
 
     while (1) {
         unsigned int now;
@@ -389,7 +387,7 @@ void bare_main(void) {
         draw_cube(projected, mode);
         picocalc_lcd_blit_rgb(FB_X, FB_Y, FB_W, FB_H, g_fb);
 
-        now = TIMERAWL;
+        now = reg_time_us();
         elapsed = now - last_us;
         last_us = now;
         if (elapsed != 0u) fps = 1000000u / elapsed;

@@ -1,14 +1,12 @@
 #include "picocalc_lcd_bare.h"
 #include "rp2040_regs.h"
 
-#define TIMERAWL REG32(0x40054028u)
-
 static volatile uint32_t g_bench_sink;
 static uint8_t g_copy_src[1024];
 static uint8_t g_copy_dst[1024];
 
 static uint32_t timer_us(void) {
-    return TIMERAWL;
+    return reg_time_us();
 }
 
 static uint32_t elapsed_us(uint32_t start, uint32_t end) {
@@ -192,8 +190,13 @@ void bare_main(void) {
     format_value_line(sink_line, sizeof(sink_line), "sink", 0u, g_bench_sink, "");
 
     picocalc_lcd_clear(0x000000u);
+#ifdef PICOCALC_SDK_FLASH
+    draw_line(0, "PicoCalc SDK bench", 0xffffffu);
+    draw_line(1, "timer: SDK time_us_32", 0x80c0ffu);
+#else
     draw_line(0, "PicoCalc RP2040 bench", 0xffffffu);
     draw_line(1, "timer: TIMERAWL us", 0x80c0ffu);
+#endif
     draw_line(3, "nop/alu/mul/div are loops", 0x808080u);
     draw_line(4, "copy uses 1024B buffer", 0x808080u);
     draw_line(5, lcd_line, 0xc0ffc0u);

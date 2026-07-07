@@ -9,3 +9,4 @@ vendor/*
 test-data/
 
 experimental/
+src/open-cwy/

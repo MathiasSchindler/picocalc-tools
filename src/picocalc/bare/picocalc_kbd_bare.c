@@ -1,17 +1,28 @@
 #include "picocalc_kbd_bare.h"
 #include "rp2040_regs.h"
 
+#ifdef PICOCALC_SDK_FLASH
+#include "hardware/gpio.h"
+#include "hardware/i2c.h"
+#include "pico/stdlib.h"
+#endif
+
 #define KBD_SDA 6
 #define KBD_SCL 7
 #define KBD_ADDR 0x1fu
 #define KBD_REG_KEY 0x09u
 
 static void kbd_delay_ms(unsigned int ms) {
+#ifdef PICOCALC_SDK_FLASH
+    sleep_ms(ms);
+#else
     while (ms-- != 0u) {
         reg_wait_cycles(60000u);
     }
+#endif
 }
 
+#ifndef PICOCALC_SDK_FLASH
 static int i2c_wait(unsigned int mask, unsigned int value) {
     unsigned int timeout = 2000000u;
     while ((I2C_IC_STATUS & mask) != value) {
@@ -73,8 +84,16 @@ static int i2c_read(uint8_t address, uint8_t *dst, int count) {
     }
     return i2c_wait_stop();
 }
+#endif
 
 void picocalc_kbd_init(void) {
+#ifdef PICOCALC_SDK_FLASH
+    i2c_init(i2c1, 400000u);
+    gpio_set_function(KBD_SDA, GPIO_FUNC_I2C);
+    gpio_set_function(KBD_SCL, GPIO_FUNC_I2C);
+    gpio_pull_up(KBD_SDA);
+    gpio_pull_up(KBD_SCL);
+#else
     reset_unreset(RESET_I2C1);
 
     gpio_pad_pull_up(KBD_SDA);
@@ -89,15 +108,23 @@ void picocalc_kbd_init(void) {
     I2C_IC_FS_SPKLEN = 498u;
     I2C_IC_SDA_HOLD = 40u;
     I2C_IC_ENABLE = 1u;
+#endif
 }
 
 int picocalc_kbd_read_key(void) {
     uint8_t bytes[2];
     uint32_t raw;
 
+#ifdef PICOCALC_SDK_FLASH
+    uint8_t reg = KBD_REG_KEY;
+    if (i2c_write_blocking(i2c1, KBD_ADDR, &reg, 1, true) != 1) return -1;
+    kbd_delay_ms(16);
+    if (i2c_read_blocking(i2c1, KBD_ADDR, bytes, 2, false) != 2) return -1;
+#else
     if (i2c_write_byte(KBD_ADDR, KBD_REG_KEY) != 0) return -1;
     kbd_delay_ms(16);
     if (i2c_read(KBD_ADDR, bytes, 2) != 0) return -1;
+#endif
 
     raw = (uint32_t)bytes[0] | ((uint32_t)bytes[1] << 8);
     if ((raw & 0xffu) == 1u) {

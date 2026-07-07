@@ -2,6 +2,12 @@
 #include "picocalc_font.h"
 #include "rp2040_regs.h"
 
+#ifdef PICOCALC_SDK_FLASH
+#include "hardware/gpio.h"
+#include "hardware/spi.h"
+#include "pico/stdlib.h"
+#endif
+
 #define LCD_SCK 10
 #define LCD_TX  11
 #define LCD_RX  12
@@ -20,13 +26,26 @@
 #define CMD_DISPON 0x29u
 #define CMD_INVON 0x21u
 
+#ifdef PICOCALC_SDK_FLASH
+#define LCD_SPI spi1
+#endif
+
 static void delay_ms(unsigned int ms) {
+#ifdef PICOCALC_SDK_FLASH
+    sleep_ms(ms);
+#else
     while (ms-- != 0u) {
         reg_wait_cycles(60000u);
     }
+#endif
 }
 
 static void spi_finish(void) {
+#ifdef PICOCALC_SDK_FLASH
+    while (spi_is_busy(LCD_SPI)) {
+        tight_loop_contents();
+    }
+#else
     while ((SPI_SSPSR & SPI_SR_TFE) == 0u) {
     }
     while ((SPI_SSPSR & SPI_SR_BSY) != 0u) {
@@ -35,18 +54,27 @@ static void spi_finish(void) {
         (void)SPI_SSPDR;
     }
     SPI_SSPICR = 3u;
+#endif
 }
 
 static void spi_write_byte(uint8_t byte) {
+#ifdef PICOCALC_SDK_FLASH
+    (void)spi_write_blocking(LCD_SPI, &byte, 1);
+#else
     while ((SPI_SSPSR & SPI_SR_TNF) == 0u) {
     }
     SPI_SSPDR = byte;
+#endif
 }
 
 static void spi_write(const uint8_t *data, size_t count) {
+#ifdef PICOCALC_SDK_FLASH
+    (void)spi_write_blocking(LCD_SPI, data, count);
+#else
     while (count-- != 0u) {
         spi_write_byte(*data++);
     }
+#endif
 }
 
 static void lcd_command(uint8_t command) {
@@ -164,6 +192,21 @@ static void lcd_init_panel(void) {
 }
 
 void picocalc_lcd_init(void) {
+#ifdef PICOCALC_SDK_FLASH
+    spi_init(LCD_SPI, 24000000u);
+    gpio_set_function(LCD_SCK, GPIO_FUNC_SPI);
+    gpio_set_function(LCD_TX, GPIO_FUNC_SPI);
+    gpio_set_function(LCD_RX, GPIO_FUNC_SPI);
+    gpio_init(LCD_CS);
+    gpio_init(LCD_DC);
+    gpio_init(LCD_RST);
+    gpio_set_dir(LCD_CS, GPIO_OUT);
+    gpio_set_dir(LCD_DC, GPIO_OUT);
+    gpio_set_dir(LCD_RST, GPIO_OUT);
+    gpio_put(LCD_CS, 1);
+    gpio_put(LCD_DC, 1);
+    gpio_put(LCD_RST, 1);
+#else
     reset_unreset(RESET_IO_BANK0 | RESET_PADS_BANK0 | RESET_SPI1);
 
     gpio_pad_default(LCD_SCK);
@@ -192,6 +235,7 @@ void picocalc_lcd_init(void) {
     SPI_SSPCPSR = 6u;
     SPI_SSPCR0 = 7u;
     SPI_SSPCR1 = 2u;
+#endif
 
     lcd_init_panel();
 }

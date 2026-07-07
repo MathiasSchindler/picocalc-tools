@@ -75,6 +75,7 @@ target_include_directories(picocalc_hello_flash PRIVATE
 
 target_link_libraries(picocalc_hello_flash PRIVATE
     pico_stdlib
+    hardware_spi
 )
 
 pico_enable_stdio_usb(picocalc_hello_flash 1)
@@ -106,11 +107,77 @@ target_include_directories(picocalc_hello_sdk_picolink_probe PRIVATE
 
 target_link_libraries(picocalc_hello_sdk_picolink_probe PRIVATE
     pico_stdlib
+    hardware_spi
 )
 
 pico_enable_stdio_usb(picocalc_hello_sdk_picolink_probe 0)
 pico_enable_stdio_uart(picocalc_hello_sdk_picolink_probe 0)
 pico_add_extra_outputs(picocalc_hello_sdk_picolink_probe)
+
+function(configure_picocalc_bare_sdk_flash_target target)
+    target_compile_options(${target} PRIVATE
+        -Wall
+        -Wextra
+        -Os
+    )
+
+    target_compile_definitions(${target} PRIVATE
+        PICOCALC_SDK_FLASH=1
+    )
+
+    target_include_directories(${target} PRIVATE
+        ${CMAKE_CURRENT_LIST_DIR}/src/picocalc/bare
+        ${CMAKE_CURRENT_LIST_DIR}/src/picocalc/sdk
+        ${CMAKE_CURRENT_LIST_DIR}/build/font
+    )
+
+    target_link_libraries(${target} PRIVATE
+        pico_stdlib
+        hardware_i2c
+        hardware_spi
+    )
+
+    pico_enable_stdio_usb(${target} 1)
+    pico_enable_stdio_uart(${target} 1)
+    pico_add_extra_outputs(${target})
+endfunction()
+
+add_executable(picocalc_keys_flash
+    src/picocalc/bare/keys.c
+    src/picocalc/bare/picocalc_lcd_bare.c
+    src/picocalc/bare/picocalc_kbd_bare.c
+    src/picocalc/sdk/hello_flash_main.c
+)
+configure_picocalc_bare_sdk_flash_target(picocalc_keys_flash)
+
+add_executable(picocalc_cube_flash
+    src/picocalc/bare/cube.c
+    src/picocalc/bare/picocalc_lcd_bare.c
+    src/picocalc/bare/picocalc_kbd_bare.c
+    src/picocalc/sdk/hello_flash_main.c
+)
+configure_picocalc_bare_sdk_flash_target(picocalc_cube_flash)
+
+add_executable(picocalc_graphics_flash
+    src/picocalc/bare/graphics_demo.c
+    src/picocalc/bare/picocalc_lcd_bare.c
+    src/picocalc/sdk/hello_flash_main.c
+)
+configure_picocalc_bare_sdk_flash_target(picocalc_graphics_flash)
+
+add_executable(picocalc_benchmark_flash
+    src/picocalc/bare/benchmark.c
+    src/picocalc/bare/picocalc_lcd_bare.c
+    src/picocalc/sdk/hello_flash_main.c
+)
+configure_picocalc_bare_sdk_flash_target(picocalc_benchmark_flash)
+
+add_executable(picocalc_video_bench_flash
+    src/picocalc/bare/video_bench.c
+    src/picocalc/bare/picocalc_lcd_bare.c
+    src/picocalc/sdk/hello_flash_main.c
+)
+configure_picocalc_bare_sdk_flash_target(picocalc_video_bench_flash)
 
 add_executable(picocalc_solve_sd ${PICOCALC_SOLVE_SOURCES})
 configure_picocalc_solve_target(picocalc_solve_sd)
@@ -173,6 +240,24 @@ if(PICO_CYW43_SUPPORTED)
     )
     configure_picow_wifi_diag_target(picow_net_diag_flash)
     set_target_properties(picow_net_diag_flash PROPERTIES OUTPUT_NAME picow_net_diag_flash)
+
+    add_executable(open_cwy_probe_flash
+        src/open-cwy/open_cwy_probe.c
+        src/open-cwy/open_cwy_trace.c
+        src/picow_net/picow_net.c
+    )
+    configure_picow_wifi_diag_target(open_cwy_probe_flash)
+    target_include_directories(open_cwy_probe_flash PRIVATE
+        ${CMAKE_CURRENT_LIST_DIR}/src/open-cwy
+        ${PICO_SDK_PATH}/lib/cyw43-driver/src
+    )
+    set(OPEN_CWY_DIAG_HOST "" CACHE STRING "IPv4 host that receives open-cwy UDP diagnostics")
+    set(OPEN_CWY_DIAG_PORT "31337" CACHE STRING "UDP port that receives open-cwy diagnostics")
+    target_compile_definitions(open_cwy_probe_flash PRIVATE
+        OPEN_CWY_DIAG_HOST=\"${OPEN_CWY_DIAG_HOST}\"
+        OPEN_CWY_DIAG_PORT=${OPEN_CWY_DIAG_PORT}
+    )
+    set_target_properties(open_cwy_probe_flash PROPERTIES OUTPUT_NAME open_cwy_probe_flash)
 
     add_executable(picow_ssh_flash
         src/ssh.c

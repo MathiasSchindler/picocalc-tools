@@ -6,13 +6,38 @@ LDLIBS ?= -lgcc
 BUILD_DIR := build
 GENERATED_DIR := $(BUILD_DIR)/generated
 PICOW_BUILD_DIR ?= $(BUILD_DIR)/picow
+PICOW2_BUILD_DIR ?= $(BUILD_DIR)/picow2
 SDK_HELLO_BUILD_DIR ?= $(BUILD_DIR)/sdk-hello
 PICOW_WIFI_DIAG_FLASH_BIN := $(PICOW_BUILD_DIR)/picow_wifi_diag_flash.bin
 PICOW_WIFI_DIAG_FLASH_UF2 := $(PICOW_BUILD_DIR)/picow_wifi_diag_flash.uf2
 PICOW_NET_DIAG_FLASH_BIN := $(PICOW_BUILD_DIR)/picow_net_diag_flash.bin
 PICOW_NET_DIAG_FLASH_UF2 := $(PICOW_BUILD_DIR)/picow_net_diag_flash.uf2
+OPEN_CWY_PROBE_FLASH_BIN := $(PICOW_BUILD_DIR)/open_cwy_probe_flash.bin
+OPEN_CWY_PROBE_FLASH_UF2 := $(PICOW_BUILD_DIR)/open_cwy_probe_flash.uf2
 PICOW_SSH_FLASH_BIN := $(PICOW_BUILD_DIR)/picow_ssh_flash.bin
 PICOW_SSH_FLASH_UF2 := $(PICOW_BUILD_DIR)/picow_ssh_flash.uf2
+PICOW2_HELLO_FLASH_BIN := $(PICOW2_BUILD_DIR)/picocalc_hello_flash.bin
+PICOW2_HELLO_FLASH_UF2 := $(PICOW2_BUILD_DIR)/picocalc_hello_flash.uf2
+PICOW2_KEYS_FLASH_BIN := $(PICOW2_BUILD_DIR)/picocalc_keys_flash.bin
+PICOW2_KEYS_FLASH_UF2 := $(PICOW2_BUILD_DIR)/picocalc_keys_flash.uf2
+PICOW2_SOLVE_FLASH_BIN := $(PICOW2_BUILD_DIR)/picocalc_solve.bin
+PICOW2_SOLVE_FLASH_UF2 := $(PICOW2_BUILD_DIR)/picocalc_solve.uf2
+PICOW2_CUBE_FLASH_BIN := $(PICOW2_BUILD_DIR)/picocalc_cube_flash.bin
+PICOW2_CUBE_FLASH_UF2 := $(PICOW2_BUILD_DIR)/picocalc_cube_flash.uf2
+PICOW2_GRAPHICS_FLASH_BIN := $(PICOW2_BUILD_DIR)/picocalc_graphics_flash.bin
+PICOW2_GRAPHICS_FLASH_UF2 := $(PICOW2_BUILD_DIR)/picocalc_graphics_flash.uf2
+PICOW2_BENCHMARK_FLASH_BIN := $(PICOW2_BUILD_DIR)/picocalc_benchmark_flash.bin
+PICOW2_BENCHMARK_FLASH_UF2 := $(PICOW2_BUILD_DIR)/picocalc_benchmark_flash.uf2
+PICOW2_VIDEO_BENCH_FLASH_BIN := $(PICOW2_BUILD_DIR)/picocalc_video_bench_flash.bin
+PICOW2_VIDEO_BENCH_FLASH_UF2 := $(PICOW2_BUILD_DIR)/picocalc_video_bench_flash.uf2
+PICOW2_WIFI_DIAG_FLASH_BIN := $(PICOW2_BUILD_DIR)/picow_wifi_diag_flash.bin
+PICOW2_WIFI_DIAG_FLASH_UF2 := $(PICOW2_BUILD_DIR)/picow_wifi_diag_flash.uf2
+PICOW2_NET_DIAG_FLASH_BIN := $(PICOW2_BUILD_DIR)/picow_net_diag_flash.bin
+PICOW2_NET_DIAG_FLASH_UF2 := $(PICOW2_BUILD_DIR)/picow_net_diag_flash.uf2
+OPEN_CWY_PROBE2_FLASH_BIN := $(PICOW2_BUILD_DIR)/open_cwy_probe_flash.bin
+OPEN_CWY_PROBE2_FLASH_UF2 := $(PICOW2_BUILD_DIR)/open_cwy_probe_flash.uf2
+PICOW2_SSH_FLASH_BIN := $(PICOW2_BUILD_DIR)/picow_ssh_flash.bin
+PICOW2_SSH_FLASH_UF2 := $(PICOW2_BUILD_DIR)/picow_ssh_flash.uf2
 PICOW_NET_SECRETS := test-data/ssid.txt
 PICOW_NET_SECRETS_HEADER := $(GENERATED_DIR)/picow_net_secrets.h
 SDK_HELLO_BIN := $(SDK_HELLO_BUILD_DIR)/picocalc_hello_flash.bin
@@ -31,9 +56,12 @@ HOST_EMU_SRC_DIR := src/host/emulator
 HOST_LINKER_SRC_DIR := src/host/linker
 HOST_SIM_SRC_DIR := src/host/sim
 HOST_TOOLS_SRC_DIR := src/host/tools
+OPEN_CWY_SRC_DIR := src/open-cwy
 PICOCALC_BARE_SRC_DIR := src/picocalc/bare
 PICOCALC_SDK_SRC_DIR := src/picocalc/sdk
 PICO_SDK_PATH ?= /home/mathias/pico-sdk/pico/pico-sdk
+PICO2W_CMAKE = PICO_SDK_PATH=$(PICO_SDK_PATH) cmake -S . -B $(PICOW2_BUILD_DIR) -DPICO_BOARD=pico2_w -DOPEN_CWY_DIAG_HOST="$(OPEN_CWY_DIAG_HOST)" -DOPEN_CWY_DIAG_PORT=$(OPEN_CWY_DIAG_PORT)
+PICO2W_CMAKE_JOBS ?= 2
 CYW43_FW_DIR ?= $(PICO_SDK_PATH)/lib/cyw43-driver/firmware
 CYW43_WIFI_FW ?= $(CYW43_FW_DIR)/w43439A0_7_95_49_00_combined.h
 CYW43_BT_FW ?= $(CYW43_FW_DIR)/cyw43_btfw_43439.h
@@ -42,6 +70,11 @@ FONT_DIR := $(BUILD_DIR)/font
 FONTGEN := $(FONT_DIR)/gen_picocalc_font
 TOOLS_DIR := $(BUILD_DIR)/tools
 BIN2UF2 := $(TOOLS_DIR)/bin2uf2
+OPEN_CWY_TRACE_DUMP := $(TOOLS_DIR)/open_cwy_trace_dump
+OPEN_CWY_TRACE_SELFTEST := $(TOOLS_DIR)/open_cwy_trace_selftest
+OPEN_CWY_UDP_COLLECT := $(TOOLS_DIR)/open_cwy_udp_collect
+OPEN_CWY_DIAG_HOST ?= $(shell hostname -I 2>/dev/null | awk '{print $$1}')
+OPEN_CWY_DIAG_PORT ?= 31337
 PICOCALC_APP_FLASH_BASE ?= 0x10032000
 PICOCALC_FLASH_APP_BASE ?= 0x10000100
 PICOCALC_BOOT2_UF2 ?= vendor/PicoCalc/Bin/PicoCalc SD/pico1-apps/PicoCalc_Fuzix_v1.0.uf2
@@ -162,6 +195,9 @@ BARE_BENCHMARK_PICOLINK_BIN := $(BARE_DIR)/bare_benchmark_picolink.bin
 BARE_BENCHMARK_PICOLINK_MAP := $(BARE_DIR)/bare_benchmark_picolink.map
 BARE_BENCHMARK_FLASH_PICOLINK_BIN := $(BARE_DIR)/bare_benchmark_flash_picolink.bin
 BARE_BENCHMARK_FLASH_PICOLINK_MAP := $(BARE_DIR)/bare_benchmark_flash_picolink.map
+BARE_VIDEO_BENCH_ELF := $(BARE_DIR)/bare_video_bench.elf
+BARE_VIDEO_BENCH_BIN := $(BARE_DIR)/bare_video_bench.bin
+VIDEO_BENCH_UF2 = $(BARE_UF2_RP2040_DIR)/video_bench.uf2
 BARE_DIAGNOSTICS_ELF := $(BARE_DIR)/bare_diagnostics.elf
 BARE_DIAGNOSTICS_BIN := $(BARE_DIR)/bare_diagnostics.bin
 BARE_DIAGNOSTICS_PICOLINK_BIN := $(BARE_DIR)/bare_diagnostics_picolink.bin
@@ -221,6 +257,7 @@ BARE_AEABI_DOUBLE_OBJ := $(BARE_DIR)/aeabi_double.o
 BARE_CUBE_PICOLINK_OBJS := $(BARE_CUBE_OBJS) $(BARE_RUNTIME_ARCHIVE)
 BARE_BENCHMARK_OBJS := $(BARE_DIR)/start.o $(BARE_DIR)/picocalc_lcd_bare.o $(BARE_DIR)/benchmark.o
 BARE_BENCHMARK_PICOLINK_OBJS := $(BARE_BENCHMARK_OBJS) $(BARE_RUNTIME_ARCHIVE)
+BARE_VIDEO_BENCH_OBJS := $(BARE_DIR)/start.o $(BARE_DIR)/picocalc_lcd_bare.o $(BARE_DIR)/video_bench.o
 BARE_DIAGNOSTICS_OBJS := $(BARE_DIR)/start.o $(BARE_DIR)/picocalc_lcd_bare.o $(BARE_DIR)/picocalc_kbd_bare.o $(BARE_DIR)/diagnostics.o
 BARE_DIAGNOSTICS_PICOLINK_OBJS := $(BARE_DIAGNOSTICS_OBJS) $(BARE_RUNTIME_ARCHIVE)
 BARE_INTERRUPT_OBJS := $(BARE_DIR)/start.o $(BARE_DIR)/picocalc_lcd_bare.o $(BARE_DIR)/interrupt_probe.o
@@ -236,15 +273,34 @@ BARE_VENDOR_STARTUP_PICOLINK_OBJS := $(BARE_VENDOR_STARTUP_OBJS) $(BARE_RUNTIME_
 BARE_SOLVE_LTO_OBJS := $(BARE_LTO_DIR)/start.o $(BARE_LTO_DIR)/picocalc_lcd_bare.o $(BARE_LTO_DIR)/picocalc_kbd_bare.o $(BARE_LTO_DIR)/solve_repl.o $(BARE_LTO_DIR)/solve_repl_bare_input.o $(BARE_LTO_DIR)/solve.o $(BARE_LTO_DIR)/support.o
 BARE_CUBE_LTO_OBJS := $(BARE_LTO_DIR)/start.o $(BARE_LTO_DIR)/picocalc_lcd_bare.o $(BARE_LTO_DIR)/picocalc_kbd_bare.o $(BARE_LTO_DIR)/cube.o
 BARE_PICOLINK_BINS := $(BARE_HELLO_PICOLINK_BIN) $(BARE_KEYS_PICOLINK_BIN) $(BARE_SOLVE_FIXED_PICOLINK_BIN) $(BARE_SOLVE_PICOLINK_BIN) $(BARE_SOLVE_CORE_PICOLINK_BIN) $(BARE_SOLVE_CORE_1BPP_PICOLINK_BIN) $(BARE_GRAPHICS_PICOLINK_BIN) $(BARE_CUBE_PICOLINK_BIN) $(BARE_CUBE_LTO_PICOLINK_BIN) $(BARE_BENCHMARK_PICOLINK_BIN) $(BARE_DIAGNOSTICS_PICOLINK_BIN) $(BARE_INTERRUPT_PICOLINK_BIN) $(BARE_DMA_PICOLINK_BIN) $(BARE_THUMB_PICOLINK_BIN) $(BARE_AEABI_DOUBLE_PICOLINK_BIN) $(BARE_VENDOR_STARTUP_PICOLINK_BIN)
-BARE_PRIMARY_BINS := $(BARE_HELLO_BIN) $(BARE_KEYS_BIN) $(BARE_SOLVE_FIXED_BIN) $(BARE_SOLVE_BIN) $(BARE_SOLVE_LTO_BIN) $(BARE_GRAPHICS_BIN) $(BARE_CUBE_BIN) $(BARE_BENCHMARK_BIN) $(BARE_DIAGNOSTICS_BIN) $(BARE_INTERRUPT_BIN) $(BARE_DMA_BIN) $(BARE_THUMB_BIN) $(BARE_AEABI_DOUBLE_BIN) $(BARE_VENDOR_STARTUP_BIN)
+BARE_PRIMARY_BINS := $(BARE_HELLO_BIN) $(BARE_KEYS_BIN) $(BARE_SOLVE_FIXED_BIN) $(BARE_SOLVE_BIN) $(BARE_SOLVE_LTO_BIN) $(BARE_GRAPHICS_BIN) $(BARE_CUBE_BIN) $(BARE_BENCHMARK_BIN) $(BARE_VIDEO_BENCH_BIN) $(BARE_DIAGNOSTICS_BIN) $(BARE_INTERRUPT_BIN) $(BARE_DMA_BIN) $(BARE_THUMB_BIN) $(BARE_AEABI_DOUBLE_BIN) $(BARE_VENDOR_STARTUP_BIN)
 BARE_APP_BINS := $(BARE_PRIMARY_BINS) $(BARE_PICOLINK_BINS)
 BARE_UF2_DIR := $(BUILD_DIR)/uf2
 BARE_UF2_MENU_DIR := $(BARE_UF2_DIR)/menu
 BARE_UF2_VARIANTS_DIR := $(BARE_UF2_DIR)/variants
-PICOW_WIFI_DIAG_UF2 := $(BARE_UF2_DIR)/wifi_diag.uf2
+BARE_UF2_RP2040_DIR := $(BARE_UF2_DIR)/rp2040
+BARE_UF2_PICO2W_DIR := $(BARE_UF2_DIR)
+PICOW_WIFI_DIAG_UF2 := $(BARE_UF2_RP2040_DIR)/wifi_diag.uf2
 PICOW_WIFI_DIAG_MENU_UF2 := $(PICOW_WIFI_DIAG_UF2)
-PICOW_NET_DIAG_UF2 := $(BARE_UF2_DIR)/net_diag.uf2
-PICOW_SSH_UF2 := $(BARE_UF2_DIR)/ssh.uf2
+PICOW_NET_DIAG_UF2 := $(BARE_UF2_RP2040_DIR)/net_diag.uf2
+OPEN_CWY_PROBE_UF2 := $(BARE_UF2_RP2040_DIR)/open_cwy_probe.uf2
+PICOW_SSH_UF2 := $(BARE_UF2_RP2040_DIR)/ssh.uf2
+PICOW2_HELLO_UF2 := $(BARE_UF2_PICO2W_DIR)/hello.uf2
+PICOW2_KEYS_UF2 := $(BARE_UF2_PICO2W_DIR)/keys.uf2
+PICOW2_SOLVE_UF2 := $(BARE_UF2_PICO2W_DIR)/solve.uf2
+PICOW2_CUBE_UF2 := $(BARE_UF2_PICO2W_DIR)/cube.uf2
+PICOW2_GRAPHICS_UF2 := $(BARE_UF2_PICO2W_DIR)/graphics.uf2
+PICOW2_BENCHMARK_UF2 := $(BARE_UF2_PICO2W_DIR)/benchmark.uf2
+PICOW2_VIDEO_BENCH_UF2 := $(BARE_UF2_PICO2W_DIR)/video_bench.uf2
+PICOW2_WIFI_DIAG_UF2 := $(BARE_UF2_PICO2W_DIR)/wifi_diag.uf2
+PICOW2_NET_DIAG_UF2 := $(BARE_UF2_PICO2W_DIR)/net_diag.uf2
+OPEN_CWY_PROBE2_UF2 := $(BARE_UF2_PICO2W_DIR)/open_cwy_probe.uf2
+PICOW2_SSH_UF2 := $(BARE_UF2_PICO2W_DIR)/ssh.uf2
+PICO2W_NORMAL_UF2S := $(PICOW2_HELLO_UF2) $(PICOW2_KEYS_UF2) $(PICOW2_SOLVE_UF2) $(PICOW2_GRAPHICS_UF2) $(PICOW2_CUBE_UF2) $(PICOW2_BENCHMARK_UF2) $(PICOW2_VIDEO_BENCH_UF2)
+PICO2W_WIRELESS_UF2S := $(PICOW2_WIFI_DIAG_UF2) $(PICOW2_NET_DIAG_UF2) $(OPEN_CWY_PROBE2_UF2) $(PICOW2_SSH_UF2)
+PICO2W_UF2S := $(PICO2W_NORMAL_UF2S) $(PICO2W_WIRELESS_UF2S)
+PICO2W_NORMAL_CMAKE_TARGETS := picocalc_hello_flash picocalc_keys_flash picocalc_solve picocalc_graphics_flash picocalc_cube_flash picocalc_benchmark_flash picocalc_video_bench_flash
+PICO2W_WIRELESS_CMAKE_TARGETS := picow_wifi_diag_flash picow_net_diag_flash open_cwy_probe_flash picow_ssh_flash
 HELLO_MATRIX_UF2_DIR := $(BARE_UF2_DIR)/hello-matrix
 HELLO_MATRIX_SDK_GNU_UF2 := $(HELLO_MATRIX_UF2_DIR)/hello_sdk_gnu.uf2
 HELLO_MATRIX_SDK_PICOLINK_UF2 := $(HELLO_MATRIX_UF2_DIR)/hello_sdk_picolink.uf2
@@ -255,19 +311,20 @@ HELLO_SMALL_SDK_GNU_UF2 := $(HELLO_SMALL_UF2_DIR)/hello_sdk_gnu.uf2
 HELLO_SMALL_SDK_PICOLINK_UF2 := $(HELLO_SMALL_UF2_DIR)/hello_sdk_picolink.uf2
 HELLO_SMALL_NOSDK_GNU_UF2 := $(HELLO_SMALL_UF2_DIR)/hello_nosdk_gnu.uf2
 HELLO_SMALL_NOSDK_PICOLINK_UF2 := $(HELLO_SMALL_UF2_DIR)/hello_nosdk_picolink.uf2
-BARE_MENU_BINS := $(BARE_HELLO_BIN) $(BARE_KEYS_BIN) $(BARE_SOLVE_BIN) $(BARE_GRAPHICS_BIN) $(BARE_CUBE_BIN) $(BARE_BENCHMARK_BIN) $(BARE_DIAGNOSTICS_BIN)
+BARE_MENU_BINS := $(BARE_HELLO_BIN) $(BARE_KEYS_BIN) $(BARE_SOLVE_BIN) $(BARE_GRAPHICS_BIN) $(BARE_CUBE_BIN) $(BARE_BENCHMARK_BIN) $(BARE_VIDEO_BENCH_BIN) $(BARE_DIAGNOSTICS_BIN)
 BARE_VARIANT_BINS := $(filter-out $(BARE_MENU_BINS),$(BARE_APP_BINS))
 BARE_MENU_UF2S := $(addprefix $(BARE_UF2_MENU_DIR)/,$(notdir $(BARE_MENU_BINS:.bin=.uf2)))
 BARE_VARIANT_UF2S := $(addprefix $(BARE_UF2_VARIANTS_DIR)/,$(notdir $(BARE_VARIANT_BINS:.bin=.uf2)))
 BARE_UF2S := $(BARE_MENU_UF2S) $(BARE_VARIANT_UF2S)
-PICOCALC_DELIVERABLE_UF2S := $(BARE_UF2_DIR)/hello.uf2 $(BARE_UF2_DIR)/keys.uf2 $(BARE_UF2_DIR)/solve.uf2 $(BARE_UF2_DIR)/graphics.uf2 $(BARE_UF2_DIR)/cube.uf2 $(BARE_UF2_DIR)/benchmark.uf2 $(BARE_UF2_DIR)/diagnostics.uf2 $(PICOW_WIFI_DIAG_UF2) $(PICOW_NET_DIAG_UF2)
+PICOCALC_DELIVERABLE_UF2S := $(BARE_UF2_RP2040_DIR)/hello.uf2 $(BARE_UF2_RP2040_DIR)/keys.uf2 $(BARE_UF2_RP2040_DIR)/solve.uf2 $(BARE_UF2_RP2040_DIR)/graphics.uf2 $(BARE_UF2_RP2040_DIR)/cube.uf2 $(BARE_UF2_RP2040_DIR)/benchmark.uf2 $(VIDEO_BENCH_UF2) $(BARE_UF2_RP2040_DIR)/diagnostics.uf2 $(PICOW_WIFI_DIAG_UF2) $(PICOW_NET_DIAG_UF2) $(OPEN_CWY_PROBE_UF2)
 PICOCALC_DELIVERABLE_UF2_NAMES := $(notdir $(PICOCALC_DELIVERABLE_UF2S))
 
-.PHONY: uf2 picocalc-uf2
+.PHONY: uf2 picocalc-uf2 rp2040-uf2 picocalc-rp2040-uf2 rp2040-picow-wifi-diag rp2040-picow-net-diag rp2040-open-cwy-probe rp2040-picow-ssh
+.PHONY: pico2w pico2w-all pico2w-normal pico2w-wireless pico2w-hello pico2w-keys pico2w-solve pico2w-graphics pico2w-cube pico2w-benchmark pico2w-video-bench pico2w-wifi-diag pico2w-net-diag pico2w-open-cwy-probe open-cwy-probe2 pico2w-ssh
 
-.PHONY: all arm-probe bare-aeabi-double-probe bare-aeabi-double-probe-picolink bare-benchmark bare-benchmark-picolink bare-cube bare-cube-lto-picolink bare-cube-picolink bare-diagnostics bare-diagnostics-picolink bare-dma-probe bare-dma-probe-picolink bare-graphics bare-graphics-picolink bare-hello bare-hello-picolink bare-interrupt-probe bare-interrupt-probe-picolink bare-keys bare-keys-picolink bare-picolink-all bare-solve bare-solve-core-1bpp-picolink bare-solve-core-picolink bare-solve-fixed bare-solve-fixed-picolink bare-solve-lto bare-solve-picolink bare-thumb-probe bare-thumb-probe-picolink bare-uf2-all bare-uf2-menu bare-uf2-variants bare-vendor-startup-probe bare-vendor-startup-probe-picolink bin-emu-aeabi-double-probe bin-emu-aeabi-double-probe-picolink bin-emu-benchmark bin-emu-benchmark-picolink bin-emu-cube bin-emu-cube-gif bin-emu-cube-lto-picolink bin-emu-cube-picolink bin-emu-cyw43-trace-smoke bin-emu-diagnostics bin-emu-diagnostics-picolink bin-emu-dma-probe bin-emu-dma-probe-picolink bin-emu-graphics bin-emu-graphics-frames bin-emu-graphics-picolink bin-emu-hello bin-emu-hello-picolink bin-emu-hello-trace bin-emu-interrupt-probe bin-emu-interrupt-probe-picolink bin-emu-live-hello bin-emu-live-solve bin-emu-picow-wifi-diag bin-emu-sdk-hello bin-emu-solve bin-emu-solve-core-1bpp-picolink bin-emu-solve-core-picolink bin-emu-solve-fixed-picolink bin-emu-solve-lto bin-emu-solve-picolink bin-emu-thumb-probe bin-emu-thumb-probe-picolink bin-emu-vendor-startup-probe bin-emu-vendor-startup-probe-picolink clean cube-link-compare cyw43-blob-inventory emu-deterministic-tests emu-replay-manifest-check emu-vendor-probe font-cascadia font-cascadia-1bpp gui-graphics gui-hello gui-solve hello-linker-matrix hello-linker-matrix-small picolink-regression picow-net-diag picow-ssh picow-wifi-diag sdk-hello-picolink-bin sdk-hello-uf2 sim-graphics sim-solve-fixed sim-solve-repl smoke
+.PHONY: all arm-probe bare-aeabi-double-probe bare-aeabi-double-probe-picolink bare-benchmark bare-benchmark-picolink bare-cube bare-cube-lto-picolink bare-cube-picolink bare-diagnostics bare-diagnostics-picolink bare-dma-probe bare-dma-probe-picolink bare-graphics bare-graphics-picolink bare-hello bare-hello-picolink bare-interrupt-probe bare-interrupt-probe-picolink bare-keys bare-keys-picolink bare-picolink-all bare-solve bare-solve-core-1bpp-picolink bare-solve-core-picolink bare-solve-fixed bare-solve-fixed-picolink bare-solve-lto bare-solve-picolink bare-thumb-probe bare-thumb-probe-picolink bare-uf2-all bare-uf2-menu bare-uf2-variants bare-vendor-startup-probe bare-vendor-startup-probe-picolink bare-video-bench bin-emu-aeabi-double-probe bin-emu-aeabi-double-probe-picolink bin-emu-benchmark bin-emu-benchmark-picolink bin-emu-cube bin-emu-cube-gif bin-emu-cube-lto-picolink bin-emu-cube-picolink bin-emu-cyw43-trace-smoke bin-emu-diagnostics bin-emu-diagnostics-picolink bin-emu-dma-probe bin-emu-dma-probe-picolink bin-emu-graphics bin-emu-graphics-frames bin-emu-graphics-picolink bin-emu-hello bin-emu-hello-picolink bin-emu-hello-trace bin-emu-interrupt-probe bin-emu-interrupt-probe-picolink bin-emu-live-hello bin-emu-live-solve bin-emu-picow-wifi-diag bin-emu-sdk-hello bin-emu-solve bin-emu-solve-core-1bpp-picolink bin-emu-solve-core-picolink bin-emu-solve-fixed-picolink bin-emu-solve-lto bin-emu-solve-picolink bin-emu-thumb-probe bin-emu-thumb-probe-picolink bin-emu-vendor-startup-probe bin-emu-vendor-startup-probe-picolink bin-emu-video-bench clean cube-link-compare cyw43-blob-inventory emu-deterministic-tests emu-replay-manifest-check emu-vendor-probe font-cascadia font-cascadia-1bpp gui-graphics gui-hello gui-solve hello-linker-matrix hello-linker-matrix-small open-cwy-probe open-cwy-tools picolink-regression picow-net-diag picow-ssh picow-wifi-diag sdk-hello-picolink-bin sdk-hello-uf2 sim-graphics sim-solve-fixed sim-solve-repl smoke
 
-all: uf2
+all: pico2w-all open-cwy-tools
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
@@ -298,6 +355,17 @@ $(FONTGEN): $(FONTGEN_SRCS) | $(FONT_DIR)
 
 $(BIN2UF2): $(HOST_TOOLS_SRC_DIR)/bin2uf2.c | $(TOOLS_DIR)
 	$(CC) -std=c11 -Wall -Wextra -O2 $< -o $@
+
+$(OPEN_CWY_TRACE_DUMP): $(OPEN_CWY_SRC_DIR)/open_cwy_trace_dump.c $(OPEN_CWY_SRC_DIR)/open_cwy_trace.h | $(TOOLS_DIR)
+	$(CC) -std=c11 -Wall -Wextra -O2 -I$(OPEN_CWY_SRC_DIR) $< -o $@
+
+$(OPEN_CWY_TRACE_SELFTEST): $(OPEN_CWY_SRC_DIR)/open_cwy_trace_selftest.c $(OPEN_CWY_SRC_DIR)/open_cwy_trace.c $(OPEN_CWY_SRC_DIR)/open_cwy_trace.h $(OPEN_CWY_SRC_DIR)/open_cwy_observer.c $(OPEN_CWY_SRC_DIR)/open_cwy_observer.h | $(TOOLS_DIR)
+	$(CC) -std=c11 -Wall -Wextra -O2 -I$(OPEN_CWY_SRC_DIR) $(OPEN_CWY_SRC_DIR)/open_cwy_trace_selftest.c $(OPEN_CWY_SRC_DIR)/open_cwy_trace.c $(OPEN_CWY_SRC_DIR)/open_cwy_observer.c -o $@
+
+$(OPEN_CWY_UDP_COLLECT): $(OPEN_CWY_SRC_DIR)/open_cwy_udp_collect.c | $(TOOLS_DIR)
+	$(CC) -std=c11 -Wall -Wextra -O2 $< -o $@
+
+open-cwy-tools: $(OPEN_CWY_TRACE_DUMP) $(OPEN_CWY_TRACE_SELFTEST) $(OPEN_CWY_UDP_COLLECT)
 
 $(FONTGEN_HEADER) $(FONTGEN_PREVIEW) &: $(FONTGEN) $(FONTGEN_INPUT) | $(FONT_DIR)
 	$(FONTGEN) $(FONTGEN_INPUT) $(FONTGEN_HEADER) $(FONTGEN_PREVIEW)
@@ -401,6 +469,9 @@ bin-emu-solve-core-1bpp-picolink: $(BIN_EMU) $(BARE_SOLVE_CORE_1BPP_PICOLINK_BIN
 bin-emu-benchmark: $(BIN_EMU) $(BARE_BENCHMARK_BIN)
 	$(BIN_EMU) $(BARE_BENCHMARK_BIN) $(EMU_DIR)/bare_benchmark.png
 
+bin-emu-video-bench: $(BIN_EMU) $(BARE_VIDEO_BENCH_BIN)
+	$(BIN_EMU) $(BARE_VIDEO_BENCH_BIN) $(EMU_DIR)/bare_video_bench.png --max-steps=500000000 --fail-on-budget --report-milestones
+
 bin-emu-benchmark-picolink: $(BIN_EMU) $(BARE_BENCHMARK_PICOLINK_BIN)
 	$(BIN_EMU) $(BARE_BENCHMARK_PICOLINK_BIN) $(EMU_DIR)/bare_benchmark_picolink.png --symbols=$(BARE_BENCHMARK_PICOLINK_MAP) --expect-hash=$(EMU_HASH_BENCHMARK_PICOLINK)
 
@@ -474,11 +545,17 @@ $(SDK_HELLO_PICOLINK_FLASH_BIN): $(PICO_LINK) $(BARE_RUNTIME_ARCHIVE) font-casca
 
 sdk-hello-picolink-bin: $(SDK_HELLO_PICOLINK_BIN)
 
-picow-wifi-diag: $(PICOW_WIFI_DIAG_UF2)
+picow-wifi-diag: $(PICOW2_WIFI_DIAG_UF2)
 
-picow-net-diag: $(PICOW_NET_DIAG_UF2)
+rp2040-picow-wifi-diag: $(PICOW_WIFI_DIAG_UF2)
 
-picow-ssh: $(PICOW_SSH_UF2)
+picow-net-diag: $(PICOW2_NET_DIAG_UF2)
+
+rp2040-picow-net-diag: $(PICOW_NET_DIAG_UF2)
+
+picow-ssh: $(PICOW2_SSH_UF2)
+
+rp2040-picow-ssh: $(PICOW_SSH_UF2)
 
 bin-emu-picow-wifi-diag: $(BIN_EMU) picow-wifi-diag
 	$(BIN_EMU) $(PICOW_WIFI_DIAG_FLASH_BIN) $(EMU_DIR)/picow_wifi_diag.png --flash-start --trace=$(EMU_DIR)/picow_wifi_diag_cyw43.trace --trace-kinds=cyw43,unknown-mmio --cyw43-model --max-steps=$(PICOW_WIFI_DIAG_EMU_STEPS) --report-milestones
@@ -612,9 +689,10 @@ $(BARE_1BPP_DIR):
 $(BARE_UF2_DIR):
 	mkdir -p $(BARE_UF2_DIR)
 
-uf2 picocalc-uf2: $(PICOCALC_DELIVERABLE_UF2S)
-	@find $(BARE_UF2_DIR) -mindepth 1 -type d -exec rm -rf {} +
-	@set -e; for f in $(BARE_UF2_DIR)/*.uf2; do \
+uf2 picocalc-uf2: pico2w-all
+
+rp2040-uf2 picocalc-rp2040-uf2: $(PICOCALC_DELIVERABLE_UF2S)
+	@set -e; for f in $(BARE_UF2_RP2040_DIR)/*.uf2; do \
 		[ -e "$$f" ] || continue; \
 		name=$$(basename "$$f"); \
 		case " $(PICOCALC_DELIVERABLE_UF2_NAMES) " in *" $$name "*) ;; *) rm -f "$$f";; esac; \
@@ -622,7 +700,7 @@ uf2 picocalc-uf2: $(PICOCALC_DELIVERABLE_UF2S)
 	@ls -lh $(PICOCALC_DELIVERABLE_UF2S)
 
 define PICOCALC_PICOLINK_UF2_RULE
-$(BARE_UF2_DIR)/$(1).uf2: $(2) $(BIN2UF2) | $(BARE_UF2_DIR)
+$(BARE_UF2_RP2040_DIR)/$(1).uf2: $(2) $(BIN2UF2) | $(BARE_UF2_RP2040_DIR)
 	$(BIN2UF2) --boot2-app "$$(PICOCALC_BOOT2_UF2)" $$< $$@ $$(PICOCALC_FLASH_APP_BASE) $$(RP2040_UF2_FAMILY_ID)
 endef
 
@@ -634,7 +712,87 @@ $(eval $(call PICOCALC_PICOLINK_UF2_RULE,cube,$(BARE_CUBE_FLASH_PICOLINK_BIN)))
 $(eval $(call PICOCALC_PICOLINK_UF2_RULE,benchmark,$(BARE_BENCHMARK_FLASH_PICOLINK_BIN)))
 $(eval $(call PICOCALC_PICOLINK_UF2_RULE,diagnostics,$(BARE_DIAGNOSTICS_FLASH_PICOLINK_BIN)))
 
-$(PICOW_WIFI_DIAG_UF2): $(BIN2UF2) CMakeLists.txt $(PICOCALC_SDK_SRC_DIR)/picow_wifi_diag.c | $(BARE_UF2_DIR)
+pico2w pico2w-all: pico2w-normal pico2w-wireless
+	@ls -lh $(PICO2W_UF2S)
+
+pico2w-normal: font-cascadia | $(BARE_UF2_PICO2W_DIR)
+	$(PICO2W_CMAKE)
+	cmake --build $(PICOW2_BUILD_DIR) --target $(PICO2W_NORMAL_CMAKE_TARGETS) -j$(PICO2W_CMAKE_JOBS)
+	cp $(PICOW2_HELLO_FLASH_UF2) $(PICOW2_HELLO_UF2)
+	cp $(PICOW2_KEYS_FLASH_UF2) $(PICOW2_KEYS_UF2)
+	cp $(PICOW2_SOLVE_FLASH_UF2) $(PICOW2_SOLVE_UF2)
+	cp $(PICOW2_GRAPHICS_FLASH_UF2) $(PICOW2_GRAPHICS_UF2)
+	cp $(PICOW2_CUBE_FLASH_UF2) $(PICOW2_CUBE_UF2)
+	cp $(PICOW2_BENCHMARK_FLASH_UF2) $(PICOW2_BENCHMARK_UF2)
+	cp $(PICOW2_VIDEO_BENCH_FLASH_UF2) $(PICOW2_VIDEO_BENCH_UF2)
+	@ls -lh $(PICO2W_NORMAL_UF2S)
+
+pico2w-wireless: $(PICOW_NET_SECRETS_HEADER) | $(BARE_UF2_PICO2W_DIR)
+	$(PICO2W_CMAKE)
+	cmake --build $(PICOW2_BUILD_DIR) --target $(PICO2W_WIRELESS_CMAKE_TARGETS) -j$(PICO2W_CMAKE_JOBS)
+	cp $(PICOW2_WIFI_DIAG_FLASH_UF2) $(PICOW2_WIFI_DIAG_UF2)
+	cp $(PICOW2_NET_DIAG_FLASH_UF2) $(PICOW2_NET_DIAG_UF2)
+	cp $(OPEN_CWY_PROBE2_FLASH_UF2) $(OPEN_CWY_PROBE2_UF2)
+	cp $(PICOW2_SSH_FLASH_UF2) $(PICOW2_SSH_UF2)
+	@ls -lh $(PICO2W_WIRELESS_UF2S)
+
+$(PICOW2_HELLO_UF2): $(BIN2UF2) CMakeLists.txt $(PICOCALC_BARE_SRC_DIR)/hello.c $(PICOCALC_BARE_SRC_DIR)/picocalc_lcd_bare.c $(PICOCALC_BARE_SRC_DIR)/picocalc_lcd_bare.h $(PICOCALC_BARE_SRC_DIR)/rp2040_regs.h $(PICOCALC_SDK_SRC_DIR)/hello_flash_main.c font-cascadia | $(BARE_UF2_PICO2W_DIR)
+	PICO_SDK_PATH=$(PICO_SDK_PATH) cmake -S . -B $(PICOW2_BUILD_DIR) -DPICO_BOARD=pico2_w
+	cmake --build $(PICOW2_BUILD_DIR) --target picocalc_hello_flash -j2
+	cp $(PICOW2_HELLO_FLASH_UF2) $@
+	@ls -lh $(PICOW2_HELLO_FLASH_BIN) $(PICOW2_HELLO_FLASH_UF2) $@
+
+pico2w-hello: $(PICOW2_HELLO_UF2)
+
+$(PICOW2_KEYS_UF2): $(BIN2UF2) CMakeLists.txt $(PICOCALC_BARE_SRC_DIR)/keys.c $(PICOCALC_BARE_SRC_DIR)/picocalc_lcd_bare.c $(PICOCALC_BARE_SRC_DIR)/picocalc_kbd_bare.c $(PICOCALC_BARE_SRC_DIR)/picocalc_lcd_bare.h $(PICOCALC_BARE_SRC_DIR)/picocalc_kbd_bare.h $(PICOCALC_BARE_SRC_DIR)/rp2040_regs.h $(PICOCALC_SDK_SRC_DIR)/hello_flash_main.c font-cascadia | $(BARE_UF2_PICO2W_DIR)
+	PICO_SDK_PATH=$(PICO_SDK_PATH) cmake -S . -B $(PICOW2_BUILD_DIR) -DPICO_BOARD=pico2_w
+	cmake --build $(PICOW2_BUILD_DIR) --target picocalc_keys_flash -j2
+	cp $(PICOW2_KEYS_FLASH_UF2) $@
+	@ls -lh $(PICOW2_KEYS_FLASH_BIN) $(PICOW2_KEYS_FLASH_UF2) $@
+
+pico2w-keys: $(PICOW2_KEYS_UF2)
+
+$(PICOW2_SOLVE_UF2): $(BIN2UF2) CMakeLists.txt src/solve.c src/support.c $(PICOCALC_SDK_SRC_DIR)/platform_rp2040.c $(PICOCALC_SDK_SRC_DIR)/picocalc_io.c | $(BARE_UF2_PICO2W_DIR)
+	PICO_SDK_PATH=$(PICO_SDK_PATH) cmake -S . -B $(PICOW2_BUILD_DIR) -DPICO_BOARD=pico2_w
+	cmake --build $(PICOW2_BUILD_DIR) --target picocalc_solve -j2
+	cp $(PICOW2_SOLVE_FLASH_UF2) $@
+	@ls -lh $(PICOW2_SOLVE_FLASH_BIN) $(PICOW2_SOLVE_FLASH_UF2) $@
+
+pico2w-solve: $(PICOW2_SOLVE_UF2)
+
+$(PICOW2_CUBE_UF2): $(BIN2UF2) CMakeLists.txt $(PICOCALC_BARE_SRC_DIR)/cube.c $(PICOCALC_BARE_SRC_DIR)/picocalc_lcd_bare.c $(PICOCALC_BARE_SRC_DIR)/picocalc_kbd_bare.c $(PICOCALC_BARE_SRC_DIR)/picocalc_lcd_bare.h $(PICOCALC_BARE_SRC_DIR)/picocalc_kbd_bare.h $(PICOCALC_BARE_SRC_DIR)/rp2040_regs.h $(PICOCALC_SDK_SRC_DIR)/hello_flash_main.c font-cascadia | $(BARE_UF2_PICO2W_DIR)
+	PICO_SDK_PATH=$(PICO_SDK_PATH) cmake -S . -B $(PICOW2_BUILD_DIR) -DPICO_BOARD=pico2_w
+	cmake --build $(PICOW2_BUILD_DIR) --target picocalc_cube_flash -j2
+	cp $(PICOW2_CUBE_FLASH_UF2) $@
+	@ls -lh $(PICOW2_CUBE_FLASH_BIN) $(PICOW2_CUBE_FLASH_UF2) $@
+
+pico2w-cube: $(PICOW2_CUBE_UF2)
+
+$(PICOW2_GRAPHICS_UF2): $(BIN2UF2) CMakeLists.txt $(PICOCALC_BARE_SRC_DIR)/graphics_demo.c $(PICOCALC_BARE_SRC_DIR)/picocalc_lcd_bare.c $(PICOCALC_BARE_SRC_DIR)/picocalc_lcd_bare.h $(PICOCALC_BARE_SRC_DIR)/rp2040_regs.h $(PICOCALC_SDK_SRC_DIR)/hello_flash_main.c font-cascadia | $(BARE_UF2_PICO2W_DIR)
+	PICO_SDK_PATH=$(PICO_SDK_PATH) cmake -S . -B $(PICOW2_BUILD_DIR) -DPICO_BOARD=pico2_w
+	cmake --build $(PICOW2_BUILD_DIR) --target picocalc_graphics_flash -j2
+	cp $(PICOW2_GRAPHICS_FLASH_UF2) $@
+	@ls -lh $(PICOW2_GRAPHICS_FLASH_BIN) $(PICOW2_GRAPHICS_FLASH_UF2) $@
+
+pico2w-graphics: $(PICOW2_GRAPHICS_UF2)
+
+$(PICOW2_BENCHMARK_UF2): $(BIN2UF2) CMakeLists.txt $(PICOCALC_BARE_SRC_DIR)/benchmark.c $(PICOCALC_BARE_SRC_DIR)/picocalc_lcd_bare.c $(PICOCALC_BARE_SRC_DIR)/picocalc_lcd_bare.h $(PICOCALC_BARE_SRC_DIR)/rp2040_regs.h $(PICOCALC_SDK_SRC_DIR)/hello_flash_main.c font-cascadia | $(BARE_UF2_PICO2W_DIR)
+	PICO_SDK_PATH=$(PICO_SDK_PATH) cmake -S . -B $(PICOW2_BUILD_DIR) -DPICO_BOARD=pico2_w
+	cmake --build $(PICOW2_BUILD_DIR) --target picocalc_benchmark_flash -j2
+	cp $(PICOW2_BENCHMARK_FLASH_UF2) $@
+	@ls -lh $(PICOW2_BENCHMARK_FLASH_BIN) $(PICOW2_BENCHMARK_FLASH_UF2) $@
+
+pico2w-benchmark: $(PICOW2_BENCHMARK_UF2)
+
+$(PICOW2_VIDEO_BENCH_UF2): $(BIN2UF2) CMakeLists.txt $(PICOCALC_BARE_SRC_DIR)/video_bench.c $(PICOCALC_BARE_SRC_DIR)/picocalc_lcd_bare.c $(PICOCALC_BARE_SRC_DIR)/picocalc_lcd_bare.h $(PICOCALC_BARE_SRC_DIR)/rp2040_regs.h $(PICOCALC_SDK_SRC_DIR)/hello_flash_main.c font-cascadia | $(BARE_UF2_PICO2W_DIR)
+	PICO_SDK_PATH=$(PICO_SDK_PATH) cmake -S . -B $(PICOW2_BUILD_DIR) -DPICO_BOARD=pico2_w
+	cmake --build $(PICOW2_BUILD_DIR) --target picocalc_video_bench_flash -j2
+	cp $(PICOW2_VIDEO_BENCH_FLASH_UF2) $@
+	@ls -lh $(PICOW2_VIDEO_BENCH_FLASH_BIN) $(PICOW2_VIDEO_BENCH_FLASH_UF2) $@
+
+pico2w-video-bench: $(PICOW2_VIDEO_BENCH_UF2)
+
+$(PICOW_WIFI_DIAG_UF2): $(BIN2UF2) CMakeLists.txt $(PICOCALC_SDK_SRC_DIR)/picow_wifi_diag.c | $(BARE_UF2_RP2040_DIR)
 	PICO_SDK_PATH=$(PICO_SDK_PATH) cmake -S . -B $(PICOW_BUILD_DIR) -DPICO_BOARD=pico_w
 	cmake --build $(PICOW_BUILD_DIR) --target picow_wifi_diag_flash -j2
 	cp $(PICOW_WIFI_DIAG_FLASH_UF2) $@
@@ -643,19 +801,59 @@ $(PICOW_WIFI_DIAG_UF2): $(BIN2UF2) CMakeLists.txt $(PICOCALC_SDK_SRC_DIR)/picow_
 $(PICOW_NET_SECRETS_HEADER): $(PICOW_NET_SECRETS) Makefile | $(GENERATED_DIR)
 	@awk 'function trim(s){sub(/^[ \t]+/,"",s);sub(/[ \t\r]+$$/,"",s);return s} function esc(s){gsub(/\\/,"\\\\",s);gsub(/"/,"\\\"",s);return s} function unquote(s){if(length(s)>=2&&((substr(s,1,1)=="\""&&substr(s,length(s),1)=="\"")||(substr(s,1,1)=="'\''"&&substr(s,length(s),1)=="'\''")))return substr(s,2,length(s)-2);return s} /^[ \t]*(#|$$)/{next} {line=trim($$0);eq=index(line,"=");colon=index(line,":");if(eq==0||(colon>0&&colon<eq))eq=colon;if(eq>0){key=tolower(trim(substr(line,1,eq-1)));val=unquote(trim(substr(line,eq+1)));if(key=="ssid")ssid=val;else if(key=="password"||key=="pass"||key=="psk")pass=val;else if(key=="ping")ping=val;else if(key=="dns"||key=="host")dns=val}else{n++;line=unquote(line);if(n==1)ssid=line;else if(n==2)pass=line;else if(n==3)ping=line;else if(n==4)dns=line}} END{if(ssid==""){print "missing SSID in $(PICOW_NET_SECRETS)" > "/dev/stderr";exit 1} if(dns=="")dns="example.com";print "#ifndef PICOW_NET_SECRETS_H";print "#define PICOW_NET_SECRETS_H";print "#define PICOW_NET_SSID \"" esc(ssid) "\"";print "#define PICOW_NET_PASSWORD \"" esc(pass) "\"";print "#define PICOW_NET_PING_HOST \"" esc(ping) "\"";print "#define PICOW_NET_DNS_NAME \"" esc(dns) "\"";print "#endif"}' $< > $@
 
-$(PICOW_NET_DIAG_UF2): $(BIN2UF2) CMakeLists.txt $(PICOCALC_SDK_SRC_DIR)/picow_net_diag.c $(PICOW_NET_SECRETS_HEADER) | $(BARE_UF2_DIR)
+$(PICOW_NET_DIAG_UF2): $(BIN2UF2) CMakeLists.txt $(PICOCALC_SDK_SRC_DIR)/picow_net_diag.c $(PICOW_NET_SECRETS_HEADER) | $(BARE_UF2_RP2040_DIR)
 	PICO_SDK_PATH=$(PICO_SDK_PATH) cmake -S . -B $(PICOW_BUILD_DIR) -DPICO_BOARD=pico_w
 	cmake --build $(PICOW_BUILD_DIR) --target picow_net_diag_flash -j2
 	cp $(PICOW_NET_DIAG_FLASH_UF2) $@
 	@ls -lh $(PICOW_NET_DIAG_FLASH_BIN) $(PICOW_NET_DIAG_FLASH_UF2) $@
 
-$(PICOW_SSH_UF2): $(BIN2UF2) CMakeLists.txt src/ssh.c src/picow_net/picow_net.c src/picow_net/picow_net.h src/picow_net/picow_tcp.c src/picow_net/picow_tcp.h src/ssh/picow_ssh_platform.c src/ssh/picow_ssh_runtime.c src/ssh/picow_ssh_tool_util.c src/ssh/picow_ssh_pinned_host.h vendor/newos/ssh/ssh_client.c vendor/newos/ssh/ssh_client.h vendor/newos/ssh/ssh_core.c vendor/newos/ssh/ssh_known_hosts.c vendor/newos/crypto/ed25519.c $(PICOW_NET_SECRETS_HEADER) | $(BARE_UF2_DIR)
+$(PICOW2_WIFI_DIAG_UF2): $(BIN2UF2) CMakeLists.txt $(PICOCALC_SDK_SRC_DIR)/picow_wifi_diag.c | $(BARE_UF2_PICO2W_DIR)
+	PICO_SDK_PATH=$(PICO_SDK_PATH) cmake -S . -B $(PICOW2_BUILD_DIR) -DPICO_BOARD=pico2_w
+	cmake --build $(PICOW2_BUILD_DIR) --target picow_wifi_diag_flash -j2
+	cp $(PICOW2_WIFI_DIAG_FLASH_UF2) $@
+	@ls -lh $(PICOW2_WIFI_DIAG_FLASH_BIN) $(PICOW2_WIFI_DIAG_FLASH_UF2) $@
+
+pico2w-wifi-diag: $(PICOW2_WIFI_DIAG_UF2)
+
+$(PICOW2_NET_DIAG_UF2): $(BIN2UF2) CMakeLists.txt $(PICOCALC_SDK_SRC_DIR)/picow_net_diag.c $(PICOW_NET_SECRETS_HEADER) | $(BARE_UF2_PICO2W_DIR)
+	PICO_SDK_PATH=$(PICO_SDK_PATH) cmake -S . -B $(PICOW2_BUILD_DIR) -DPICO_BOARD=pico2_w
+	cmake --build $(PICOW2_BUILD_DIR) --target picow_net_diag_flash -j2
+	cp $(PICOW2_NET_DIAG_FLASH_UF2) $@
+	@ls -lh $(PICOW2_NET_DIAG_FLASH_BIN) $(PICOW2_NET_DIAG_FLASH_UF2) $@
+
+pico2w-net-diag: $(PICOW2_NET_DIAG_UF2)
+
+$(OPEN_CWY_PROBE_UF2): $(BIN2UF2) CMakeLists.txt $(OPEN_CWY_SRC_DIR)/open_cwy_probe.c src/picow_net/picow_net.c src/picow_net/picow_net.h $(PICOW_NET_SECRETS_HEADER) | $(BARE_UF2_RP2040_DIR)
+	PICO_SDK_PATH=$(PICO_SDK_PATH) cmake -S . -B $(PICOW_BUILD_DIR) -DPICO_BOARD=pico_w -DOPEN_CWY_DIAG_HOST="$(OPEN_CWY_DIAG_HOST)" -DOPEN_CWY_DIAG_PORT=$(OPEN_CWY_DIAG_PORT)
+	cmake --build $(PICOW_BUILD_DIR) --target open_cwy_probe_flash -j2
+	cp $(OPEN_CWY_PROBE_FLASH_UF2) $@
+	@ls -lh $(OPEN_CWY_PROBE_FLASH_BIN) $(OPEN_CWY_PROBE_FLASH_UF2) $@
+
+rp2040-open-cwy-probe: $(OPEN_CWY_PROBE_UF2)
+
+$(OPEN_CWY_PROBE2_UF2): $(BIN2UF2) CMakeLists.txt $(OPEN_CWY_SRC_DIR)/open_cwy_probe.c src/picow_net/picow_net.c src/picow_net/picow_net.h $(PICOW_NET_SECRETS_HEADER) | $(BARE_UF2_PICO2W_DIR)
+	PICO_SDK_PATH=$(PICO_SDK_PATH) cmake -S . -B $(PICOW2_BUILD_DIR) -DPICO_BOARD=pico2_w -DOPEN_CWY_DIAG_HOST="$(OPEN_CWY_DIAG_HOST)" -DOPEN_CWY_DIAG_PORT=$(OPEN_CWY_DIAG_PORT)
+	cmake --build $(PICOW2_BUILD_DIR) --target open_cwy_probe_flash -j2
+	cp $(OPEN_CWY_PROBE2_FLASH_UF2) $@
+	@ls -lh $(OPEN_CWY_PROBE2_FLASH_BIN) $(OPEN_CWY_PROBE2_FLASH_UF2) $@
+
+pico2w-open-cwy-probe open-cwy-probe open-cwy-probe2: $(OPEN_CWY_PROBE2_UF2)
+
+$(PICOW_SSH_UF2): $(BIN2UF2) CMakeLists.txt src/ssh.c src/picow_net/picow_net.c src/picow_net/picow_net.h src/picow_net/picow_tcp.c src/picow_net/picow_tcp.h src/ssh/picow_ssh_platform.c src/ssh/picow_ssh_runtime.c src/ssh/picow_ssh_tool_util.c src/ssh/picow_ssh_pinned_host.h vendor/newos/ssh/ssh_client.c vendor/newos/ssh/ssh_client.h vendor/newos/ssh/ssh_core.c vendor/newos/ssh/ssh_known_hosts.c vendor/newos/crypto/ed25519.c $(PICOW_NET_SECRETS_HEADER) | $(BARE_UF2_RP2040_DIR)
 	PICO_SDK_PATH=$(PICO_SDK_PATH) cmake -S . -B $(PICOW_BUILD_DIR) -DPICO_BOARD=pico_w
 	cmake --build $(PICOW_BUILD_DIR) --target picow_ssh_flash -j2
 	cp $(PICOW_SSH_FLASH_UF2) $@
 	@ls -lh $(PICOW_SSH_FLASH_BIN) $(PICOW_SSH_FLASH_UF2) $@
 
-$(BARE_UF2_MENU_DIR) $(BARE_UF2_VARIANTS_DIR):
+$(PICOW2_SSH_UF2): $(BIN2UF2) CMakeLists.txt src/ssh.c src/picow_net/picow_net.c src/picow_net/picow_net.h src/picow_net/picow_tcp.c src/picow_net/picow_tcp.h src/ssh/picow_ssh_platform.c src/ssh/picow_ssh_runtime.c src/ssh/picow_ssh_tool_util.c src/ssh/picow_ssh_pinned_host.h vendor/newos/ssh/ssh_client.c vendor/newos/ssh/ssh_client.h vendor/newos/ssh/ssh_core.c vendor/newos/ssh/ssh_known_hosts.c vendor/newos/crypto/ed25519.c $(PICOW_NET_SECRETS_HEADER) | $(BARE_UF2_PICO2W_DIR)
+	PICO_SDK_PATH=$(PICO_SDK_PATH) cmake -S . -B $(PICOW2_BUILD_DIR) -DPICO_BOARD=pico2_w
+	cmake --build $(PICOW2_BUILD_DIR) --target picow_ssh_flash -j2
+	cp $(PICOW2_SSH_FLASH_UF2) $@
+	@ls -lh $(PICOW2_SSH_FLASH_BIN) $(PICOW2_SSH_FLASH_UF2) $@
+
+pico2w-ssh: $(PICOW2_SSH_UF2)
+
+$(BARE_UF2_MENU_DIR) $(BARE_UF2_VARIANTS_DIR) $(BARE_UF2_RP2040_DIR):
 	mkdir -p $@
 
 $(HELLO_MATRIX_UF2_DIR):
@@ -760,7 +958,7 @@ $(BARE_LTO_DIR)/support.o: src/support.c | $(BARE_LTO_DIR)
 
 $(SIM_DIR)/picocalc_lcd_sim.o $(BARE_DIR)/picocalc_lcd_bare.o $(BARE_LTO_DIR)/picocalc_lcd_bare.o: $(FONTGEN_HEADER) $(PICOCALC_BARE_SRC_DIR)/picocalc_font.h
 
-$(BARE_HELLO_OBJS) $(BARE_KEYS_OBJS) $(BARE_SOLVE_FIXED_OBJS) $(BARE_SOLVE_OBJS) $(BARE_SOLVE_CORE_OBJS) $(BARE_SOLVE_CORE_1BPP_OBJS) $(BARE_GRAPHICS_OBJS) $(BARE_CUBE_OBJS) $(BARE_BENCHMARK_OBJS) $(BARE_DIAGNOSTICS_OBJS) $(BARE_INTERRUPT_OBJS) $(BARE_DMA_OBJS) $(BARE_THUMB_OBJS) $(BARE_AEABI_DOUBLE_OBJS) $(BARE_VENDOR_STARTUP_OBJS): $(PICOCALC_BARE_SRC_DIR)/rp2040_regs.h $(PICOCALC_BARE_SRC_DIR)/picocalc_lcd_bare.h $(PICOCALC_BARE_SRC_DIR)/picocalc_kbd_bare.h
+$(BARE_HELLO_OBJS) $(BARE_KEYS_OBJS) $(BARE_SOLVE_FIXED_OBJS) $(BARE_SOLVE_OBJS) $(BARE_SOLVE_CORE_OBJS) $(BARE_SOLVE_CORE_1BPP_OBJS) $(BARE_GRAPHICS_OBJS) $(BARE_CUBE_OBJS) $(BARE_BENCHMARK_OBJS) $(BARE_VIDEO_BENCH_OBJS) $(BARE_DIAGNOSTICS_OBJS) $(BARE_INTERRUPT_OBJS) $(BARE_DMA_OBJS) $(BARE_THUMB_OBJS) $(BARE_AEABI_DOUBLE_OBJS) $(BARE_VENDOR_STARTUP_OBJS): $(PICOCALC_BARE_SRC_DIR)/rp2040_regs.h $(PICOCALC_BARE_SRC_DIR)/picocalc_lcd_bare.h $(PICOCALC_BARE_SRC_DIR)/picocalc_kbd_bare.h
 
 $(BARE_HELLO_ELF): $(BARE_HELLO_OBJS) $(PICOCALC_BARE_SRC_DIR)/memmap_sd_rp2040.ld
 	$(BARE_CC) $(BARE_CFLAGS) $(BARE_LDFLAGS) $(BARE_HELLO_OBJS) $(BARE_LDLIBS) -o $@
@@ -929,6 +1127,20 @@ $(BARE_BENCHMARK_BIN): $(BARE_BENCHMARK_ELF)
 	od -An -tx4 -N8 $@
 
 bare-benchmark: $(BARE_BENCHMARK_BIN)
+
+$(BARE_VIDEO_BENCH_ELF): $(BARE_VIDEO_BENCH_OBJS) $(PICOCALC_BARE_SRC_DIR)/memmap_sd_rp2040.ld
+	$(BARE_CC) $(BARE_CFLAGS) $(BARE_LDFLAGS) $(BARE_VIDEO_BENCH_OBJS) $(BARE_LDLIBS) -o $@
+
+$(BARE_VIDEO_BENCH_BIN): $(BARE_VIDEO_BENCH_ELF)
+	$(BARE_OBJCOPY) -O binary $< $@
+	$(BARE_SIZE) $<
+	od -An -tx4 -N8 $@
+
+bare-video-bench: $(BARE_VIDEO_BENCH_BIN)
+
+$(VIDEO_BENCH_UF2): $(BARE_VIDEO_BENCH_BIN) $(BIN2UF2) | $(BARE_UF2_RP2040_DIR)
+	$(BIN2UF2) --flash-start "$(PICOCALC_BOOT2_UF2)" $< $@ $(PICOCALC_APP_FLASH_BASE) $(RP2040_UF2_FAMILY_ID)
+	@ls -lh $< $@
 
 $(BARE_BENCHMARK_PICOLINK_BIN): $(PICO_LINK) $(BARE_BENCHMARK_PICOLINK_OBJS)
 	$(PICO_LINK) --stats --map=$(BARE_BENCHMARK_PICOLINK_MAP) -o $@ $(BARE_BENCHMARK_PICOLINK_OBJS)
